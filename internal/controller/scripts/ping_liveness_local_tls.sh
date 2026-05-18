@@ -10,9 +10,9 @@ if [ ! -z "$VALKEY_PASSWORD" ]; then export REDISCLI_AUTH=$VALKEY_PASSWORD; fi;
 		-p $VALKEY_TLS_PORT_NUMBER \
 		--tls \
 		--cacert $VALKEY_TLS_CA_FILE \
+		--cert $VALKEY_TLS_CERT_FILE \
+		--key $VALKEY_TLS_KEY_FILE \
 		ping
-		#--cert $VALKEY_TLS_CERT_FILE \
-		#--key $VALKEY_TLS_KEY_FILE \
 )
 
 if [ "$?" -eq "124" ]; then

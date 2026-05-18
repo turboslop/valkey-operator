@@ -327,6 +327,15 @@ func (r *ValkeyReconciler) checkState(ctx context.Context, valkey *hyperv1.Valke
 		logger.Error(err, "failed to ping valkey")
 		return err
 	}
+	clusterInfo, err := vClient.Do(ctx, vClient.B().ClusterInfo().Build()).ToString()
+	if err != nil {
+		logger.Error(err, "failed to get cluster info")
+		return err
+	}
+	if !strings.Contains(clusterInfo, "cluster_state:ok") {
+		logger.Info("cluster is not ready yet", "cluster_info", clusterInfo)
+		return fmt.Errorf("cluster is not ready: %s", clusterInfo)
+	}
 	valkey.Status.Ready = true
 	if err := r.Client.Status().Update(ctx, valkey); err != nil {
 		logger.Error(err, "Valkey status update failed.")
@@ -394,7 +403,13 @@ func (r *ValkeyReconciler) upsertConfigMap(ctx context.Context, valkey *hyperv1.
 		return err
 	}
 	conf := &bytes.Buffer{}
-	if err := confTmpl.Execute(conf, valkey); err != nil {
+	if err := confTmpl.Execute(conf, struct {
+		TLS                          bool
+		ClusterPreferredEndpointType string
+	}{
+		TLS:                          valkey.Spec.TLS,
+		ClusterPreferredEndpointType: valkey.Spec.ClusterPreferredEndpointType,
+	}); err != nil {
 		logger.Error(err, "failed to execute valkey.conf")
 		return err
 	}
@@ -2174,17 +2189,16 @@ func (r *ValkeyReconciler) exporter(valkey *hyperv1.Valkey) corev1.Container {
 			},
 			{
 				Name:  "REDIS_EXPORTER_SKIP_TLS_VERIFICATION",
-				Value: "true",
+				Value: "false",
 			},
-			/*
-				{
-					Name:  "REDIS_EXPORTER_TLS_CLIENT_KEY_FILE",
-					Value: "/etc/valkey/certs/tls.key",
-				},
-				{
-					Name:  "REDIS_EXPORTER_TLS_CLIENT_CERT_FILE",
-					Value: "/etc/valkey/certs/tls.crt",
-				}, */
+			{
+				Name:  "REDIS_EXPORTER_TLS_CLIENT_KEY_FILE",
+				Value: "/etc/valkey/certs/tls.key",
+			},
+			{
+				Name:  "REDIS_EXPORTER_TLS_CLIENT_CERT_FILE",
+				Value: "/etc/valkey/certs/tls.crt",
+			},
 			{
 				Name:  "REDIS_EXPORTER_TLS_CA_FILE",
 				Value: "/etc/valkey/certs/ca.crt",
