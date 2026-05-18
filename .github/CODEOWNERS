@@ -1,0 +1,12 @@
+# Core maintainers
+* @turboslop
+
+# Controller and API changes require review
+/internal/controller/ @turboslop
+/api/ @turboslop
+/cmd/ @turboslop
+
+# CI/CD and build changes
+/.github/ @turboslop
+Makefile @turboslop
+Dockerfile.* @turboslop

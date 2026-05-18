@@ -147,9 +147,7 @@ func (r *ValkeyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 		return ctrl.Result{}, err
 	}
 
-	if _, err := r.detectClusterDomain(ctx, valkey); err != nil {
-		return ctrl.Result{}, err
-	}
+	r.detectClusterDomain(ctx, valkey)
 
 	if err = r.upsertConfigMap(ctx, valkey); err != nil {
 		return ctrl.Result{}, err
@@ -1510,11 +1508,7 @@ func (r *ValkeyReconciler) upsertCertificate(ctx context.Context, valkey *hyperv
 
 	logger.Info("upserting certificate")
 
-	clusterDomain, err := r.detectClusterDomain(ctx, valkey)
-	if err != nil {
-		logger.Error(err, "failed to detect cluster domain")
-		return err
-	}
+	clusterDomain := r.detectClusterDomain(ctx, valkey)
 	logger.Info("using cluster domain " + clusterDomain)
 	issuer := valkey.Spec.CertIssuer
 	issuerType := valkey.Spec.CertIssuerType
@@ -1551,7 +1545,7 @@ func (r *ValkeyReconciler) upsertCertificate(ctx context.Context, valkey *hyperv
 	if err := controllerutil.SetControllerReference(valkey, cert, r.Scheme); err != nil {
 		return err
 	}
-	err = r.Get(ctx, types.NamespacedName{Namespace: valkey.Namespace, Name: valkey.Name}, cert)
+	err := r.Get(ctx, types.NamespacedName{Namespace: valkey.Namespace, Name: valkey.Name}, cert)
 	if err != nil && apierrors.IsNotFound(err) {
 		if err := r.Create(ctx, cert); err != nil {
 			logger.Error(err, "failed to create certificate")
@@ -1962,12 +1956,12 @@ func (r *ValkeyReconciler) getClusterDomain(valkey *hyperv1.Valkey) string {
 	return ""
 }
 
-func (r *ValkeyReconciler) detectClusterDomain(ctx context.Context, valkey *hyperv1.Valkey) (string, error) {
+func (r *ValkeyReconciler) detectClusterDomain(ctx context.Context, valkey *hyperv1.Valkey) string {
 	logger := log.FromContext(ctx)
 
 	logger.Info("detecting cluster domain")
 	if cached := r.getClusterDomain(valkey); cached != "" {
-		return cached, nil
+		return cached
 	}
 
 	cacheKey := valkey.Namespace + "/" + valkey.Name
@@ -1994,7 +1988,7 @@ func (r *ValkeyReconciler) detectClusterDomain(ctx context.Context, valkey *hype
 		}
 	}
 	r.clusterDomains.Store(cacheKey, clusterDomain)
-	return clusterDomain, nil
+	return clusterDomain
 }
 
 /*

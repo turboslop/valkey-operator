@@ -2,6 +2,14 @@ name: Go Test
 
 on:
   pull_request:
+    paths:
+      - '**.go'
+      - go.mod
+      - go.sum
+      - Makefile
+      - Dockerfile.*
+      - .github/workflows/test.yaml
+      - internal/**
 
 permissions:
   contents: read
@@ -18,5 +26,10 @@ jobs:
       # You can test your matrix by printing the current Go version
       - name: Display Go version
         run: go version
-      - name: Test it!
-        run: make V=1 test
+      - name: Run tests with coverage
+        run: |
+          go test $(go list ./... | grep -v /e2e) -coverprofile=cover.out -covermode=atomic
+      - name: Check coverage thresholds
+        uses: vladopajic/go-test-coverage@v2
+        with:
+          config: ./.testcoverage.yml

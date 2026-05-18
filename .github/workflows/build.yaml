@@ -2,6 +2,15 @@ name: Build
 
 on:
   pull_request:
+    paths:
+      - '**.go'
+      - go.mod
+      - go.sum
+      - Makefile
+      - Dockerfile.*
+      - .github/workflows/build.yaml
+      - internal/**
+      - cmd/**
 
 env:
   REGISTRY: ghcr.io

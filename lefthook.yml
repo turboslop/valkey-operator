@@ -1,0 +1,11 @@
+pre-commit:
+  parallel: true
+  commands:
+    lint:
+      run: golangci-lint run ./...
+    build:
+      run: go build ./...
+    test:
+      run: go test ./internal/controller/ -count=1
+    vet:
+      run: go vet ./...
