@@ -32,6 +32,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"text/template"
 	"time"
 
@@ -40,6 +41,7 @@ import (
 	"github.com/google/go-cmp/cmp"
 	monitoringv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	valkeyClient "github.com/valkey-io/valkey-go"
+	"gopkg.in/yaml.v3"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	policyv1 "k8s.io/api/policy/v1"
@@ -98,9 +100,10 @@ func randString(n int) (string, error) {
 // ValkeyReconciler reconciles a Valkey object
 type ValkeyReconciler struct {
 	client.Client
-	Recorder     record.EventRecorder
-	Scheme       *runtime.Scheme
-	GlobalConfig *globalcfg.Config
+	Recorder       record.EventRecorder
+	Scheme         *runtime.Scheme
+	GlobalConfig   *globalcfg.Config
+	clusterDomains sync.Map
 }
 
 //go:embed scripts/*
@@ -141,6 +144,10 @@ func (r *ValkeyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 	}
 	err = r.validateValkeySpec(valkey)
 	if err != nil {
+		return ctrl.Result{}, err
+	}
+
+	if _, err := r.detectClusterDomain(ctx, valkey); err != nil {
 		return ctrl.Result{}, err
 	}
 
@@ -519,17 +526,15 @@ func (r *ValkeyReconciler) initCluster(ctx context.Context, valkey *hyperv1.Valk
 			expectedNodeCount, len(connectedNodes)), "not all nodes are connected yet", "expected", expectedNodeCount, "connected", len(connectedNodes))
 	}
 
-	// ensure that all nodes in the cluster are connected to each other
-	for _, node := range connectedNodes {
-		if !node.connected {
-			continue
-		}
-		for _, peer := range connectedNodes {
-			if node == peer {
+	// meet all nodes to the first connected node — gossip handles the rest
+	if len(connectedNodes) > 0 {
+		first := connectedNodes[0]
+		for _, node := range connectedNodes[1:] {
+			if !node.connected {
 				continue
 			}
-			if err = node.client.Do(ctx,
-				node.client.B().ClusterMeet().Ip(peer.ip).Port(int64(peer.port)).Build()).Error(); err != nil {
+			if err = first.client.Do(ctx,
+				first.client.B().ClusterMeet().Ip(node.ip).Port(int64(node.port)).Build()).Error(); err != nil {
 				logger.Error(err, "failed to cluster meet")
 				return err
 			}
@@ -820,27 +825,26 @@ func (r *ValkeyReconciler) setClusterAnnounceIp(ctx context.Context, valkey *hyp
 	if len(ips) == 0 {
 		return apierrors.NewBadRequest("external ip is empty")
 	}
-	clients := map[string]valkeyClient.Client{}
 	for podName, ip := range ips {
 		host := fmt.Sprintf("%s.%s-headless.%s.svc", podName, valkey.Name, valkey.Namespace)
 		address := fmt.Sprintf("%s:%d", host, ValkeyPort)
 		logger.Info("working on node", "ip", ip, "pod", podName, "address", address)
-		clients[podName], err = r.getClient(ctx, valkey, address, true)
+		client, err := r.getClient(ctx, valkey, address, true)
 		if err != nil {
 			logger.Error(err, "failed to create valkey client")
 			return err
 		}
-		defer clients[podName].Close()
 		logger.Info("setting cluster announce ip", "ip", ip, "pod", podName)
 		r.Recorder.Event(valkey, "Normal", "Setting",
 			fmt.Sprintf("Setting cluster announce ip %s on pod %s for %s/%s", ip, podName, valkey.Namespace, valkey.Name))
 
-		out, err := clients[podName].Do(ctx, clients[podName].B().ConfigSet().ParameterValue().ParameterValue("cluster-announce-ip", ip).Build()).ToString()
+		out, err := client.Do(ctx, client.B().ConfigSet().ParameterValue().ParameterValue("cluster-announce-ip", ip).Build()).ToString()
 		if err != nil {
+			client.Close()
 			logger.Error(err, "failed to set cluster announce ip "+out)
 			return err
 		}
-		cfgs, err := clients[podName].Do(ctx, clients[podName].B().ConfigGet().Parameter("cluster-announce-ip").Build()).ToMap()
+		cfgs, err := client.Do(ctx, client.B().ConfigGet().Parameter("cluster-announce-ip").Build()).ToMap()
 		if err != nil {
 			logger.Error(err, "failed to get cluster announce ip")
 		}
@@ -850,6 +854,7 @@ func (r *ValkeyReconciler) setClusterAnnounceIp(ctx context.Context, valkey *hyp
 				logger.Error(err, "failed to set cluster announce ip ", k, str)
 			}
 		}
+		client.Close()
 		time.Sleep(time.Second * 1)
 	}
 	/* this might be useful in the future
@@ -1042,7 +1047,7 @@ func (r *ValkeyReconciler) upsertProxyCertificate(ctx context.Context, valkey *h
 				valkey.Name + "-proxy",
 				valkey.Name + "-proxy." + valkey.Namespace,
 				valkey.Name + "-proxy." + valkey.Namespace + ".svc",
-				valkey.Name + "-proxy." + valkey.Namespace + ".svc." + valkey.Spec.ClusterDomain,
+				valkey.Name + "-proxy." + valkey.Namespace + ".svc." + r.getClusterDomain(valkey),
 			},
 		},
 	}
@@ -1115,17 +1120,22 @@ func (r *ValkeyReconciler) upsertExternalAccessProxySecret(ctx context.Context, 
             trusted_ca:
               filename: "/etc/valkey/certs/ca.crt"`
 	}
-	upstreamPassword := ""
 	downstreamPassword := ""
+	upstreamPassword := ""
 	if !valkey.Spec.AnonymousAuth {
 		password, err := r.GetPassword(ctx, valkey)
 		if err != nil {
 			logger.Error(err, "failed to get password")
 			return err
 		}
-		downstreamPassword = `          downstream_auth_password:
-            inline_string: "` + password + `"`
-		upstreamPassword = `            inline_string: "` + password + `"`
+		pwdBytes, err := yaml.Marshal(map[string]string{"inline_string": password})
+		if err != nil {
+			logger.Error(err, "failed to marshal password")
+			return err
+		}
+		pwdStr := strings.TrimSpace(string(pwdBytes))
+		downstreamPassword = "          downstream_auth_password:\n            " + pwdStr
+		upstreamPassword = "            " + pwdStr
 	}
 	proxyLabels := labels(valkey)
 	proxyLabels["app.kubernetes.io/component"] = ValkeyProxy
@@ -1787,6 +1797,11 @@ func (r *ValkeyReconciler) balanceNodes(ctx context.Context, valkey *hyperv1.Val
 	var tries int
 	expectedPodsLen := int(valkey.Spec.Shards * (valkey.Spec.Replicas + 1))
 	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
 		if len(pods) != expectedPodsLen {
 			pods, err = r.getPodIPs(ctx, valkey)
 			if err != nil {
@@ -1840,6 +1855,11 @@ func (r *ValkeyReconciler) balanceNodes(ctx context.Context, valkey *hyperv1.Val
 		if !found {
 			var dial int
 			for {
+				select {
+				case <-ctx.Done():
+					return ctx.Err()
+				default:
+				}
 				network, err := net.Dial("tcp", ipPod+":"+fmt.Sprintf("%d", ValkeyPort))
 				if err != nil {
 					if err := network.Close(); err != nil {
@@ -1916,21 +1936,34 @@ func (r *ValkeyReconciler) getCertManagerIp(ctx context.Context) (string, error)
 	return "", nil
 }
 
+func (r *ValkeyReconciler) getClusterDomain(valkey *hyperv1.Valkey) string {
+	if valkey.Spec.ClusterDomain != "" {
+		return valkey.Spec.ClusterDomain
+	}
+	cacheKey := valkey.Namespace + "/" + valkey.Name
+	if cached, ok := r.clusterDomains.Load(cacheKey); ok {
+		return cached.(string)
+	}
+	return ""
+}
+
 func (r *ValkeyReconciler) detectClusterDomain(ctx context.Context, valkey *hyperv1.Valkey) (string, error) {
 	logger := log.FromContext(ctx)
 
 	logger.Info("detecting cluster domain")
-	if valkey.Spec.ClusterDomain != "" {
-		return valkey.Spec.ClusterDomain, nil
+	if cached := r.getClusterDomain(valkey); cached != "" {
+		return cached, nil
 	}
 
+	cacheKey := valkey.Namespace + "/" + valkey.Name
 	clusterDomain := os.Getenv("CLUSTER_DOMAIN")
 	if clusterDomain == "" {
 		clusterDomain = "cluster.local"
 	}
 	ip, err := r.getCertManagerIp(ctx)
 	if err != nil {
-		return "", err
+		logger.Error(err, "failed to get cert-manager IP, using default cluster domain")
+		ip = ""
 	}
 
 	if ip != "" {
@@ -1945,11 +1978,7 @@ func (r *ValkeyReconciler) detectClusterDomain(ctx context.Context, valkey *hype
 			logger.Info("detected cluster domain", "clusterDomain", clusterDomain)
 		}
 	}
-	valkey.Spec.ClusterDomain = clusterDomain
-	if err := r.Update(ctx, valkey); err != nil {
-		logger.Error(err, "failed to update valkey")
-		return "", err
-	}
+	r.clusterDomains.Store(cacheKey, clusterDomain)
 	return clusterDomain, nil
 }
 
@@ -2302,6 +2331,20 @@ func getSELinuxOptions(valkey *hyperv1.Valkey) *corev1.SELinuxOptions {
 	return &corev1.SELinuxOptions{}
 }
 
+func buildValkeyCommand(valkey *hyperv1.Valkey) []string {
+	if !valkey.Spec.AnonymousAuth {
+		return []string{
+			"sh",
+			"-c",
+			`exec valkey-server /valkey/etc/valkey.conf --requirepass "${VALKEY_PASSWORD}" --primaryauth "${VALKEY_PASSWORD}"`,
+		}
+	}
+	return []string{
+		"valkey-server",
+		"/valkey/etc/valkey.conf",
+	}
+}
+
 func (r *ValkeyReconciler) upsertStatefulSet(ctx context.Context, valkey *hyperv1.Valkey) error { // nolint:gocyclo
 	logger := log.FromContext(ctx)
 
@@ -2389,11 +2432,7 @@ func (r *ValkeyReconciler) upsertStatefulSet(ctx context.Context, valkey *hyperv
 							},
 							Name:            Valkey,
 							ImagePullPolicy: "IfNotPresent",
-							Command: []string{
-								"valkey-server",
-								"/valkey/etc/valkey.conf",
-								"--protected-mode", "no",
-							},
+							Command:         buildValkeyCommand(valkey),
 							Env: []corev1.EnvVar{
 								{
 									Name: "POD_NAME",
@@ -2628,12 +2667,7 @@ func (r *ValkeyReconciler) upsertStatefulSet(ctx context.Context, valkey *hyperv
 				},
 			},
 		})
-		sts.Spec.Template.Spec.Containers[0].Command = []string{
-			"valkey-server",
-			"/valkey/etc/valkey.conf",
-			"--requirepass", "$(VALKEY_PASSWORD)",
-			"--primaryauth", "$(VALKEY_PASSWORD)",
-		}
+		sts.Spec.Template.Spec.Containers[0].Command = buildValkeyCommand(valkey)
 	}
 	if valkey.Spec.ExternalAccess != nil && valkey.Spec.ExternalAccess.Enabled {
 		sts.Spec.Template.Spec.Containers[0].Env = append(sts.Spec.Template.Spec.Containers[0].Env, corev1.EnvVar{
@@ -2657,6 +2691,7 @@ func (r *ValkeyReconciler) upsertStatefulSet(ctx context.Context, valkey *hyperv
 		}
 		r.Recorder.Event(valkey, "Normal", "Created",
 			fmt.Sprintf("StatefulSet %s/%s is created", valkey.Namespace, valkey.Name))
+		return nil
 	} else if err != nil {
 		logger.Error(err, "failed fetching statefulset")
 		return err

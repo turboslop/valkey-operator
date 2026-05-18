@@ -168,31 +168,40 @@ func main() {
 	k8sCfg, err := rest.InClusterConfig()
 	if err != nil {
 		setupLog.Error(err, "failed to get in-cluster config")
+		os.Exit(1)
 	}
 	// creates the clientset
 	clientset, err := kubernetes.NewForConfig(k8sCfg)
 	if err != nil {
-		setupLog.Error(err, "failed to get in-cluster config")
+		setupLog.Error(err, "failed to create clientset")
+		os.Exit(1)
 	}
 	ns, err := getOperatorNamespace()
 	if err != nil {
-		setupLog.Error(err, "failed to get namespace")
+		setupLog.Error(err, "failed to get namespace, using default")
+		ns = "default"
 	}
 	cfgMap, err = clientset.CoreV1().ConfigMaps(ns).Get(ctx, cmName, metav1.GetOptions{})
 	if err != nil {
-		setupLog.Error(err, "failed to get global config")
+		setupLog.Info("global config not found, using defaults", "configmap", cmName)
 	}
 	config := cfg.Defaults()
-	for k, v := range cfgMap.Data {
-		if k == "exporterImage" && v != "" {
-			config.SidecarImage = v
-		}
-		if k == "valkeyImage" && v != "" {
-			config.ValkeyImage = v
-		}
-		if k == "nodes" && v != "" {
-			n, _ := strconv.ParseInt(v, 10, 32)
-			config.Nodes = int32(n)
+	if cfgMap != nil {
+		for k, v := range cfgMap.Data {
+			if k == "exporterImage" && v != "" {
+				config.SidecarImage = v
+			}
+			if k == "valkeyImage" && v != "" {
+				config.ValkeyImage = v
+			}
+			if k == "nodes" && v != "" {
+				n, err := strconv.ParseInt(v, 10, 32)
+				if err != nil {
+					setupLog.Error(err, "invalid nodes value in config, using default", "value", v)
+				} else {
+					config.Nodes = int32(n)
+				}
+			}
 		}
 	}
 
