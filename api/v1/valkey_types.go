@@ -49,7 +49,7 @@ type ValkeySpec struct {
 
 	// Turn on an init container to set permissions on the persistent volume
 	// +kubebuilder:default:=false
-	VolumePermissions bool `json:"volumePermissions"`
+	VolumePermissions bool `json:"volumePermissions,omitempty"`
 
 	// TLS Support
 	// +kubebuilder:default:=false
@@ -66,7 +66,7 @@ type ValkeySpec struct {
 
 	// Enable prometheus
 	// +kubebuilder:default:=false
-	Prometheus bool `json:"prometheus"`
+	Prometheus bool `json:"prometheus,omitempty"`
 	// Extra prometheus labels for operator targeting
 	// +optional
 	PrometheusLabels map[string]string `json:"prometheusLabels,omitempty"`
@@ -74,11 +74,11 @@ type ValkeySpec struct {
 	// ServiceMonitor Enabled. The service monitor is a custom resource which tells
 	// other Prometheus components how to scrape metrics from the valkey cluster
 	// +kubebuilder:default:=false
-	ServiceMonitor bool `json:"serviceMonitor"`
+	ServiceMonitor bool `json:"serviceMonitor,omitempty"`
 
 	// Cluster Domain - used for DNS
 	// +kubebuilder:default:=cluster.local
-	ClusterDomain string `json:"clusterDomain"`
+	ClusterDomain string `json:"clusterDomain,omitempty"`
 
 	// Persistent volume claim. The kind and metadata can be omitted, but the spec
 	// is necessary.
@@ -101,7 +101,7 @@ type ValkeySpec struct {
 	// use an existing secret.
 	//
 	// +kubebuilder:default:=false
-	AnonymousAuth bool `json:"anonymousAuth"`
+	AnonymousAuth bool `json:"anonymousAuth,omitempty"`
 
 	// Service Password is a SecretKeySelector that points to a data key in a Secret. Look for
 	// SecretKeySelector in [Kubernetes Pod Documentation] for details
@@ -145,14 +145,14 @@ type ValkeySpec struct {
 type ExternalAccess struct {
 	// Enable external access
 	// +kubebuilder:default:=false
-	Enabled bool `json:"enabled"`
+	Enabled bool `json:"enabled,omitempty"`
 
 	// External access type
 	// LoadBalancer or Proxy, the LoadBalancer type will create a LoadBalancer service for each Valkey Shard (master node)
 	// The Proxy type will create a single LoadBalancer service and use an envoy proxy to route traffic to the Valkey Shards
 	// +kubebuilder:default:=Proxy
 	// +kubebuilder:validation:Enum=LoadBalancer;Proxy
-	Type string `json:"type"`
+	Type string `json:"type,omitempty"`
 
 	// Proxy Settings
 	// +optional
@@ -197,7 +197,7 @@ type ProxySettings struct {
 
 	// Replicas for the proxy
 	// +kubebuilder:default:=1
-	Replicas *int32 `json:"replicas"`
+	Replicas *int32 `json:"replicas,omitempty"`
 
 	// External Hostname for the proxy
 	// +optional
@@ -215,7 +215,7 @@ type LoadBalancerSettings struct {
 type ValkeyStatus struct {
 	// Important: Run "make" to regenerate code after modifying this file
 	Conditions []metav1.Condition `json:"conditions,omitempty" patchStrategy:"merge" patchMergeKey:"type" protobuf:"bytes,1,rep,name=conditions"`
-	Ready      bool               `json:"ready"`
+	Ready      bool               `json:"ready,omitempty"`
 }
 
 // +kubebuilder:object:root=true

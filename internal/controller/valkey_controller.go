@@ -2763,9 +2763,11 @@ func (r *ValkeyReconciler) upsertStatefulSet(ctx context.Context, valkey *hyperv
 	if valkey.Spec.ExporterImage != "" {
 		exporterImage = valkey.Spec.ExporterImage
 	}
-	if (valkey.Spec.Prometheus || valkey.Spec.ServiceMonitor) && existingSts.Spec.Template.Spec.Containers[1].Image != exporterImage {
-		sts.Spec.Template.Spec.Containers[1].Image = exporterImage
-		if err := r.Update(ctx, sts); err != nil {
+	if (valkey.Spec.Prometheus || valkey.Spec.ServiceMonitor) && len(existingSts.Spec.Template.Spec.Containers) > 1 &&
+		existingSts.Spec.Template.Spec.Containers[1].Image != exporterImage {
+		patchBase := client.MergeFrom(existingSts.DeepCopy())
+		existingSts.Spec.Template.Spec.Containers[1].Image = exporterImage
+		if err := r.Patch(ctx, existingSts, patchBase); err != nil {
 			logger.Error(err, "failed to update statefulset exporter image")
 			return err
 		}
@@ -2774,7 +2776,9 @@ func (r *ValkeyReconciler) upsertStatefulSet(ctx context.Context, valkey *hyperv
 	}
 
 	if len(updateReasons) > 0 {
-		if err := r.Update(ctx, sts); err != nil {
+		patchBase := client.MergeFrom(existingSts.DeepCopy())
+		existingSts.Spec = sts.Spec
+		if err := r.Patch(ctx, existingSts, patchBase); err != nil {
 			logger.Error(err, "failed to update statefulset")
 			return err
 		}
