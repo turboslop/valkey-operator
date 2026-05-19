@@ -501,7 +501,9 @@ func (r *ValkeyReconciler) buildCluster(ctx context.Context, valkey *hyperv1.Val
 	}
 	for _, node := range nodes {
 		shards[node.shard].nodes = append(shards[node.shard].nodes, node)
-
+	}
+	for _, shard := range shards {
+		shard.sortNodes()
 	}
 
 	cluster := &valkeyCluster{
@@ -600,19 +602,18 @@ func (r *ValkeyReconciler) initCluster(ctx context.Context, valkey *hyperv1.Valk
 		if len(shard.nodes) == 0 {
 			continue
 		}
-		master := shard.nodes[0]
-		for _, node := range shard.nodes {
-			if node.isPrimary() {
-				master = node
-				break
-			}
+		master := shard.primaryNode()
+		if master == nil {
+			continue
+		}
+		if master.id == "" {
+			return fmt.Errorf("primary node %s has no cluster id", master.name)
 		}
 		for _, node := range shard.nodes {
+			if !node.connected || node.client == nil {
+				continue
+			}
 			if node == master {
-				if node.client == nil {
-					node.connected = false
-					continue
-				}
 				var info string
 				// check that the slots match that of the shard
 				info, err = node.client.Do(ctx, node.client.B().ClusterNodes().Build()).ToString()
@@ -661,7 +662,25 @@ func (r *ValkeyReconciler) initCluster(ctx context.Context, valkey *hyperv1.Valk
 						}
 					}
 				}
-			} else if node.primary != master.id {
+			} else if node.isPrimary() || node.primary != master.id {
+				if node.hasSlots() {
+					if err = node.client.Do(ctx,
+						node.client.B().ClusterDelslotsrange().StartSlotEndSlot().StartSlotEndSlot(0,
+							16383).Build()).Error(); err != nil {
+						logger.Error(err, "failed to clear slots before configuring replica", "node", node.name)
+						return err
+					}
+				}
+				if err = master.client.Do(ctx,
+					master.client.B().ClusterMeet().Ip(node.ip).Port(int64(node.port)).Build()).Error(); err != nil {
+					logger.Error(err, "failed to cluster meet replica from primary", "primary", master.name, "replica", node.name)
+					return err
+				}
+				if err = node.client.Do(ctx,
+					node.client.B().ClusterMeet().Ip(master.ip).Port(int64(master.port)).Build()).Error(); err != nil {
+					logger.Error(err, "failed to cluster meet primary from replica", "primary", master.name, "replica", node.name)
+					return err
+				}
 				err = node.client.Do(ctx, node.client.B().ClusterReplicate().NodeId(master.id).Build()).Error()
 				if err != nil {
 					logger.Error(err, "failed to cluster replicate")
@@ -712,9 +731,10 @@ func (r *ValkeyReconciler) getClusterNodes(ctx context.Context, valkey *hyperv1.
 		shard := num % int(valkey.Spec.Shards)
 
 		nodes[pod.Name] = &valkeyNode{
-			name:  pod.Name,
-			shard: shard,
-			ip:    pod.Status.PodIP,
+			name:    pod.Name,
+			shard:   shard,
+			ip:      pod.Status.PodIP,
+			ordinal: num,
 		}
 	}
 
@@ -762,7 +782,10 @@ func (r *ValkeyReconciler) getClusterNodes(ctx context.Context, valkey *hyperv1.
 		}
 
 		for _, line := range strings.Split(info, "\n") {
-			line = strings.TrimPrefix(line, "txt:")
+			line = strings.TrimSpace(strings.TrimPrefix(line, "txt:"))
+			if line == "" {
+				continue
+			}
 			parts := strings.Split(line, " ")
 			if len(parts) < 4 {
 				logger.Error(fmt.Errorf("invalid cluster node info"), "invalid cluster node info", "line", line)
@@ -776,6 +799,9 @@ func (r *ValkeyReconciler) getClusterNodes(ctx context.Context, valkey *hyperv1.
 				node.id = parts[0]
 				node.port = ValkeyPort
 				node.flags = flags
+				if len(parts) > 8 {
+					node.slots = append([]string(nil), parts[8:]...)
+				}
 				node.connected = true
 				break
 			}
@@ -1876,9 +1902,6 @@ func (r *ValkeyReconciler) balanceNodes(ctx context.Context, valkey *hyperv1.Val
 				}
 				network, err := net.Dial("tcp", ipPod+":"+fmt.Sprintf("%d", ValkeyPort))
 				if err != nil {
-					if err := network.Close(); err != nil {
-						logger.Error(err, "failed to close network")
-					}
 					time.Sleep(time.Second * 2)
 					dial++
 					if dial > 60 {
@@ -1887,18 +1910,8 @@ func (r *ValkeyReconciler) balanceNodes(ctx context.Context, valkey *hyperv1.Val
 					}
 					continue
 				}
-				if network != nil {
-					if err := network.Close(); err != nil {
-						logger.Error(err, "failed to close network")
-					}
-				} else {
-					time.Sleep(time.Second * 2)
-					dial++
-					if dial > 60 {
-						logger.Error(err, "failed to dial")
-						break
-					}
-					continue
+				if err := network.Close(); err != nil {
+					logger.Error(err, "failed to close network")
 				}
 				break
 			}

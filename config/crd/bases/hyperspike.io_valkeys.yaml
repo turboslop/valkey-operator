@@ -253,11 +253,7 @@ spec:
                 type: object
               replicas:
                 default: 0
-                description: |-
-                  Number of replicas for each node.
-
-                  Note: This field currently creates extra primary nodes.
-                  Follow  https://github.com/hyperspike/valkey-operator/issues/186 for details
+                description: Number of replicas for each shard primary.
                 format: int32
                 minimum: 0
                 type: integer

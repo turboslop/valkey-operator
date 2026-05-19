@@ -40,11 +40,7 @@ type ValkeySpec struct {
 	// +kubebuilder:validation:Minimum=1
 	Shards int32 `json:"shards,omitempty"`
 
-	// Number of replicas for each node.
-	//
-	// Note: This field currently creates extra primary nodes.
-	// Follow  https://github.com/hyperspike/valkey-operator/issues/186 for details
-	//
+	// Number of replicas for each shard primary.
 	// +kubebuilder:default:=0
 	// +kubebuilder:validation:Minimum=0
 	Replicas int32 `json:"replicas,omitempty"`
