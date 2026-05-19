@@ -36,3 +36,5 @@ cilium/
 /sidecar
 valkey-operator/
 valkey-operator-*-chart.tgz
+.env
+.secrets/**
