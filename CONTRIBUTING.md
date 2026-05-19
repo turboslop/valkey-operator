@@ -18,6 +18,12 @@ golangci-lint run
 make test-e2e
 ```
 
+For minikube, point the image loader at the active profile:
+
+```sh
+make test-e2e E2E_CLUSTER_RUNTIME=minikube MINIKUBE_PROFILE=minikube
+```
+
 ## Pull Requests
 
 Before opening a pull request:

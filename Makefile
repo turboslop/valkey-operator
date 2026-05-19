@@ -3,6 +3,12 @@ REGISTRY ?= ghcr.io/hyperspike
 IMG_CONTROLLER ?= $(REGISTRY)/valkey-operator:$(VERSION)
 IMG_SIDECAR ?= $(REGISTRY)/valkey-sidecar:$(VERSION)
 IMG_VALKEY ?= $(REGISTRY)/valkey:$(VALKEY_VERSION)
+E2E_IMG_CONTROLLER ?= localhost/valkey-operator:e2e
+E2E_IMG_SIDECAR ?= localhost/valkey-sidecar:e2e
+E2E_IMG_VALKEY ?= localhost/valkey:e2e
+E2E_CLUSTER_RUNTIME ?= kind
+E2E_TEST_TIMEOUT ?= 25m
+MINIKUBE_PROFILE ?= minikube
 # ENVTEST_K8S_VERSION refers to the version of kubebuilder assets to be downloaded by envtest binary.
 
 # Get the currently used golang install path (in GOPATH/bin, unless GOBIN is set)
@@ -89,10 +95,15 @@ vet: ## Run go vet against code.
 test: manifests generate fmt vet envtest ## Run tests.
 	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(LOCALBIN)/k8s --use-deprecated-gcs=false -p path)" go test -tags=integration $$(go list ./... | grep -v /e2e) -coverprofile cover.out
 
-# Utilize Kind or modify the e2e tests to load the image locally, enabling compatibility with other vendors.
-.PHONY: test-e2e  # Run the e2e tests against a Kind k8s instance that is spun up.
+# Run the e2e tests against an existing Kind or minikube cluster.
+.PHONY: test-e2e
 test-e2e:
-	go test ./test/e2e/ -v -ginkgo.v
+	IMG_CONTROLLER=$(E2E_IMG_CONTROLLER) \
+		IMG_SIDECAR=$(E2E_IMG_SIDECAR) \
+		IMG_VALKEY=$(E2E_IMG_VALKEY) \
+		E2E_CLUSTER_RUNTIME=$(E2E_CLUSTER_RUNTIME) \
+		MINIKUBE_PROFILE=$(MINIKUBE_PROFILE) \
+		go test ./test/e2e/ -v -ginkgo.v -timeout $(E2E_TEST_TIMEOUT)
 
 .PHONY: lint
 lint: golangci-lint ## Run golangci-lint linter

@@ -2735,34 +2735,9 @@ func (r *ValkeyReconciler) upsertStatefulSet(ctx context.Context, valkey *hyperv
 		}
 		updateReasons = append(updateReasons, "image")
 	}
-	if valkey.Spec.Storage != nil && len(existingSts.Spec.VolumeClaimTemplates) == 0 {
-		err = fmt.Errorf("storage has been added but cannot be updated in a statefuleset")
+	if err := validateVolumeClaimTemplate(valkey, existingSts, r.defaultStorageClass(ctx)); err != nil {
 		logger.Error(err, "unable to update storage in statefulset")
 		return err
-	} else if valkey.Spec.Storage == nil && len(existingSts.Spec.VolumeClaimTemplates) == 1 {
-		err = fmt.Errorf("storage has been removed but cannot be updated in a statefuleset")
-		logger.Error(err, "unable to update storage in statefulset")
-		return err
-	} else {
-		defaultStorageClass := r.defaultStorageClass(ctx)
-		currentPVCSpec := existingSts.Spec.VolumeClaimTemplates[0].Spec
-		definedPVCSpec := valkey.Spec.Storage.Spec
-		if definedPVCSpec.VolumeMode == nil {
-			// The default is Filesystem
-			fs := corev1.PersistentVolumeFilesystem
-			definedPVCSpec.VolumeMode = &fs
-		}
-		if definedPVCSpec.StorageClassName == nil {
-			definedPVCSpec.StorageClassName = &defaultStorageClass
-		}
-		if currentPVCSpec.StorageClassName == nil {
-			currentPVCSpec.StorageClassName = &defaultStorageClass
-		}
-		if !cmp.Equal(currentPVCSpec, definedPVCSpec) {
-			err = fmt.Errorf("volume claim template has changed and cannot be updated in a statefuleset")
-			logger.Error(err, "unable to update storage in statefulset")
-			return err
-		}
 	}
 	exporterImage := r.GlobalConfig.SidecarImage
 	if valkey.Spec.ExporterImage != "" {
@@ -2797,6 +2772,30 @@ func (r *ValkeyReconciler) upsertStatefulSet(ctx context.Context, valkey *hyperv
 	}
 
 	return nil
+}
+
+func validateVolumeClaimTemplate(valkey *hyperv1.Valkey, existingSts *appsv1.StatefulSet, defaultStorageClass string) error {
+	if len(existingSts.Spec.VolumeClaimTemplates) == 0 {
+		return fmt.Errorf("storage has been added but cannot be updated in a statefulset")
+	}
+
+	currentPVCSpec := normalizePVCSpec(existingSts.Spec.VolumeClaimTemplates[0].Spec, defaultStorageClass)
+	definedPVCSpec := normalizePVCSpec(generatePVC(valkey).Spec, defaultStorageClass)
+	if !cmp.Equal(currentPVCSpec, definedPVCSpec) {
+		return fmt.Errorf("volume claim template has changed and cannot be updated in a statefulset")
+	}
+	return nil
+}
+
+func normalizePVCSpec(spec corev1.PersistentVolumeClaimSpec, defaultStorageClass string) corev1.PersistentVolumeClaimSpec {
+	if spec.VolumeMode == nil {
+		fs := corev1.PersistentVolumeFilesystem
+		spec.VolumeMode = &fs
+	}
+	if spec.StorageClassName == nil {
+		spec.StorageClassName = &defaultStorageClass
+	}
+	return spec
 }
 
 // defaultStorageClass returns the default storage class for the cluster

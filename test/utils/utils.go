@@ -55,7 +55,7 @@ func Run(cmd *exec.Cmd) ([]byte, error) {
 		_, _ = fmt.Fprintf(ginkgo.GinkgoWriter, "chdir dir: %s\n", err)
 	}
 
-	cmd.Env = append(os.Environ(), "GO111MODULE=on")
+	cmd.Env = append(append(os.Environ(), cmd.Env...), "GO111MODULE=on")
 	command := strings.Join(cmd.Args, " ")
 	_, _ = fmt.Fprintf(ginkgo.GinkgoWriter, "running: %s\n", command)
 	output, err := cmd.CombinedOutput()
@@ -103,7 +103,19 @@ func InstallCertManager() error {
 	return err
 }
 
-// LoadImageToKindCluster loads a local docker image to the kind cluster
+// LoadImageToClusterWithName loads a local docker image to the configured test cluster.
+func LoadImageToClusterWithName(name string) error {
+	switch strings.ToLower(os.Getenv("E2E_CLUSTER_RUNTIME")) {
+	case "", "kind":
+		return LoadImageToKindClusterWithName(name)
+	case "minikube":
+		return LoadImageToMinikubeClusterWithName(name)
+	default:
+		return fmt.Errorf("unsupported E2E_CLUSTER_RUNTIME %q", os.Getenv("E2E_CLUSTER_RUNTIME"))
+	}
+}
+
+// LoadImageToKindClusterWithName loads a local docker image to the kind cluster.
 func LoadImageToKindClusterWithName(name string) error {
 	cluster := "kind"
 	if v, ok := os.LookupEnv("KIND_CLUSTER"); ok {
@@ -111,6 +123,17 @@ func LoadImageToKindClusterWithName(name string) error {
 	}
 	kindOptions := []string{"load", "docker-image", name, "--name", cluster}
 	cmd := exec.Command("kind", kindOptions...) // #nosec G204
+	_, err := Run(cmd)
+	return err
+}
+
+// LoadImageToMinikubeClusterWithName loads a local docker image to the minikube cluster.
+func LoadImageToMinikubeClusterWithName(name string) error {
+	profile := "minikube"
+	if v, ok := os.LookupEnv("MINIKUBE_PROFILE"); ok {
+		profile = v
+	}
+	cmd := exec.Command("minikube", "image", "load", "-p", profile, name) // #nosec G204
 	_, err := Run(cmd)
 	return err
 }
