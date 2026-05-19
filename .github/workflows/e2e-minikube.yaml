@@ -1,0 +1,81 @@
+name: E2E Minikube
+
+on:
+  pull_request:
+    paths:
+      - '**/*.go'
+      - go.mod
+      - go.sum
+      - Dockerfile.*
+      - Makefile
+      - api/**
+      - cmd/**
+      - config/**
+      - internal/**
+      - test/e2e/**
+      - test/utils/**
+      - .github/workflows/e2e-minikube.yaml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: e2e-minikube-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  KUBERNETES_VERSION: v1.33.4
+  MINIKUBE_VERSION: v1.38.1
+  MINIKUBE_PROFILE: valkey-e2e
+  E2E_CLUSTER_RUNTIME: minikube
+  E2E_IMG_CONTROLLER: localhost/valkey-operator:e2e
+  E2E_IMG_SIDECAR: localhost/valkey-sidecar:e2e
+  E2E_IMG_VALKEY: localhost/valkey:e2e
+
+jobs:
+  e2e-minikube:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version: '1.25'
+
+      - name: Install minikube and kubectl
+        run: |
+          curl -fsSLo minikube "https://github.com/kubernetes/minikube/releases/download/${MINIKUBE_VERSION}/minikube-linux-amd64"
+          sudo install minikube /usr/local/bin/minikube
+          curl -fsSLo kubectl "https://dl.k8s.io/release/${KUBERNETES_VERSION}/bin/linux/amd64/kubectl"
+          sudo install kubectl /usr/local/bin/kubectl
+          minikube version
+          kubectl version --client=true
+
+      - name: Start minikube
+        run: |
+          minikube start -p "${MINIKUBE_PROFILE}" \
+            --driver=docker \
+            --kubernetes-version="${KUBERNETES_VERSION}" \
+            --cpus=2 \
+            --memory=4096
+          kubectl cluster-info
+
+      - name: Run Valkey e2e smoke test
+        run: make V=1 test-e2e
+
+      - name: Collect diagnostics
+        if: failure()
+        run: |
+          kubectl get nodes -o wide || true
+          kubectl -n valkey-operator-system get pods -o wide || true
+          kubectl -n valkey-e2e get all -o wide || true
+          kubectl -n valkey-e2e get valkey -o wide || true
+          kubectl -n valkey-e2e get secrets || true
+          kubectl -n valkey-operator-system logs deploy/valkey-operator-controller-manager --all-containers --tail=200 || true
+          kubectl -n valkey-e2e logs job/valkey-smoke --tail=200 || true
+
+      - name: Cleanup
+        if: always()
+        run: minikube delete -p "${MINIKUBE_PROFILE}"

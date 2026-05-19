@@ -22,7 +22,9 @@ import (
 
 	"gopkg.in/yaml.v3"
 	hyperspikeiov1 "hyperspike.io/valkey-operator/api/v1"
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -71,6 +73,70 @@ func TestAnnotations(t *testing.T) {
 	result := annotations(valkey)
 	if testAnnotations["app"] != result["app"] {
 		t.Errorf("Expected %v, got %v", testAnnotations["app"], result["app"])
+	}
+}
+
+func TestValidateVolumeClaimTemplateAllowsDefaultStorage(t *testing.T) {
+	valkey := &hyperspikeiov1.Valkey{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-resource",
+			Namespace: "default",
+			Labels:    map[string]string{},
+		},
+	}
+	sts := &appsv1.StatefulSet{
+		Spec: appsv1.StatefulSetSpec{
+			VolumeClaimTemplates: []corev1.PersistentVolumeClaim{
+				generatePVC(valkey),
+			},
+		},
+	}
+
+	if err := validateVolumeClaimTemplate(valkey, sts, "standard"); err != nil {
+		t.Fatalf("expected default storage to match existing template: %v", err)
+	}
+}
+
+func TestValidateVolumeClaimTemplateRejectsMissingTemplate(t *testing.T) {
+	valkey := &hyperspikeiov1.Valkey{
+		ObjectMeta: metav1.ObjectMeta{
+			Labels: map[string]string{},
+		},
+	}
+	sts := &appsv1.StatefulSet{}
+
+	if err := validateVolumeClaimTemplate(valkey, sts, "standard"); err == nil {
+		t.Fatal("expected missing volume claim template to be rejected")
+	}
+}
+
+func TestValidateVolumeClaimTemplateRejectsChangedStorage(t *testing.T) {
+	valkey := &hyperspikeiov1.Valkey{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-resource",
+			Namespace: "default",
+			Labels:    map[string]string{},
+		},
+	}
+	sts := &appsv1.StatefulSet{
+		Spec: appsv1.StatefulSetSpec{
+			VolumeClaimTemplates: []corev1.PersistentVolumeClaim{
+				generatePVC(valkey),
+			},
+		},
+	}
+	valkey.Spec.Storage = &corev1.PersistentVolumeClaim{
+		Spec: corev1.PersistentVolumeClaimSpec{
+			Resources: corev1.VolumeResourceRequirements{
+				Requests: corev1.ResourceList{
+					corev1.ResourceStorage: resource.MustParse("2Gi"),
+				},
+			},
+		},
+	}
+
+	if err := validateVolumeClaimTemplate(valkey, sts, "standard"); err == nil {
+		t.Fatal("expected changed storage to be rejected")
 	}
 }
 
