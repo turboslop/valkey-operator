@@ -95,7 +95,6 @@ linters:
           - gocritic
           - gocyclo
           - nestif
-          - revive
           - wrapcheck
       - path: cfg/config\.go
         linters:

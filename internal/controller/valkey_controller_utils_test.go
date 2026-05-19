@@ -20,8 +20,8 @@ import (
 	"strings"
 	"testing"
 
+	valkeyv1 "github.com/turboslop/valkey-operator/api/v1"
 	"gopkg.in/yaml.v3"
-	hyperspikeiov1 "hyperspike.io/valkey-operator/api/v1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -32,7 +32,7 @@ func TestLabels(t *testing.T) {
 	testLabels := map[string]string{
 		"app": "valkey",
 	}
-	valkey := &hyperspikeiov1.Valkey{
+	valkey := &valkeyv1.Valkey{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "test-resource",
 			Namespace: "default",
@@ -61,7 +61,7 @@ func TestLabels(t *testing.T) {
 
 func TestLabelsAllowsNilObjectLabels(t *testing.T) {
 	const testResourceName = "test-resource"
-	valkey := &hyperspikeiov1.Valkey{
+	valkey := &valkeyv1.Valkey{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      testResourceName,
 			Namespace: "default",
@@ -88,7 +88,7 @@ func TestAnnotations(t *testing.T) {
 	testAnnotations := map[string]string{
 		"app": "valkey",
 	}
-	valkey := &hyperspikeiov1.Valkey{
+	valkey := &valkeyv1.Valkey{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:        "test-resource",
 			Namespace:   "default",
@@ -102,7 +102,7 @@ func TestAnnotations(t *testing.T) {
 }
 
 func TestValidateVolumeClaimTemplateAllowsDefaultStorage(t *testing.T) {
-	valkey := &hyperspikeiov1.Valkey{
+	valkey := &valkeyv1.Valkey{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "test-resource",
 			Namespace: "default",
@@ -123,7 +123,7 @@ func TestValidateVolumeClaimTemplateAllowsDefaultStorage(t *testing.T) {
 }
 
 func TestValidateVolumeClaimTemplateRejectsMissingTemplate(t *testing.T) {
-	valkey := &hyperspikeiov1.Valkey{
+	valkey := &valkeyv1.Valkey{
 		ObjectMeta: metav1.ObjectMeta{
 			Labels: map[string]string{},
 		},
@@ -136,7 +136,7 @@ func TestValidateVolumeClaimTemplateRejectsMissingTemplate(t *testing.T) {
 }
 
 func TestValidateVolumeClaimTemplateRejectsChangedStorage(t *testing.T) {
-	valkey := &hyperspikeiov1.Valkey{
+	valkey := &valkeyv1.Valkey{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "test-resource",
 			Namespace: "default",
@@ -166,7 +166,7 @@ func TestValidateVolumeClaimTemplateRejectsChangedStorage(t *testing.T) {
 }
 
 func TestServicePasswordKey(t *testing.T) {
-	valkey := &hyperspikeiov1.Valkey{
+	valkey := &valkeyv1.Valkey{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "test-resource",
 			Namespace: "default",
@@ -187,7 +187,7 @@ func TestServicePasswordKey(t *testing.T) {
 
 func TestGetClusterDomain(t *testing.T) {
 	r := &ValkeyReconciler{}
-	valkey := &hyperspikeiov1.Valkey{
+	valkey := &valkeyv1.Valkey{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "test",
 			Namespace: "default",
@@ -203,7 +203,7 @@ func TestGetClusterDomain(t *testing.T) {
 		t.Errorf("expected spec.domain, got %q", got)
 	}
 
-	valkey2 := &hyperspikeiov1.Valkey{
+	valkey2 := &valkeyv1.Valkey{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "test2",
 			Namespace: "default",
@@ -249,13 +249,13 @@ func TestPasswordYAMLMarshaling(t *testing.T) {
 }
 
 func TestRenderValkeyConfigIncludesModulesAndExtraConfig(t *testing.T) {
-	valkey := &hyperspikeiov1.Valkey{
+	valkey := &valkeyv1.Valkey{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "test-resource",
 			Namespace: "default",
 		},
-		Spec: hyperspikeiov1.ValkeySpec{
-			Modules: []hyperspikeiov1.ModuleConfig{
+		Spec: valkeyv1.ValkeySpec{
+			Modules: []valkeyv1.ModuleConfig{
 				{
 					Path: "/usr/lib/valkey/libsearch.so",
 					Args: []string{"--use-coordinator", "value with spaces"},
@@ -297,12 +297,12 @@ func TestQuoteValkeyConfigArgLeavesBundleModulePathBare(t *testing.T) {
 }
 
 func TestUpsertStatefulSetCommandNoAuth(t *testing.T) {
-	valkey := &hyperspikeiov1.Valkey{
+	valkey := &valkeyv1.Valkey{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "test",
 			Namespace: "default",
 		},
-		Spec: hyperspikeiov1.ValkeySpec{
+		Spec: valkeyv1.ValkeySpec{
 			AnonymousAuth: true,
 		},
 	}
@@ -321,12 +321,12 @@ func TestUpsertStatefulSetCommandNoAuth(t *testing.T) {
 }
 
 func TestUpsertStatefulSetCommandWithAuth(t *testing.T) {
-	valkey := &hyperspikeiov1.Valkey{
+	valkey := &valkeyv1.Valkey{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "test",
 			Namespace: "default",
 		},
-		Spec: hyperspikeiov1.ValkeySpec{
+		Spec: valkeyv1.ValkeySpec{
 			AnonymousAuth: false,
 		},
 	}
@@ -350,12 +350,12 @@ func TestUpsertStatefulSetCommandWithAuth(t *testing.T) {
 }
 
 func TestUpsertStatefulSetCommandWithAuthNoProtectedMode(t *testing.T) {
-	valkey := &hyperspikeiov1.Valkey{
+	valkey := &valkeyv1.Valkey{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "test",
 			Namespace: "default",
 		},
-		Spec: hyperspikeiov1.ValkeySpec{
+		Spec: valkeyv1.ValkeySpec{
 			AnonymousAuth: false,
 		},
 	}
@@ -368,7 +368,7 @@ func TestUpsertStatefulSetCommandWithAuthNoProtectedMode(t *testing.T) {
 }
 
 func TestServicePasswordName(t *testing.T) {
-	valkey := &hyperspikeiov1.Valkey{
+	valkey := &valkeyv1.Valkey{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "test-resource",
 			Namespace: "default",

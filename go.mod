@@ -1,4 +1,4 @@
-module hyperspike.io/valkey-operator
+module github.com/turboslop/valkey-operator
 
 go 1.25.0
 

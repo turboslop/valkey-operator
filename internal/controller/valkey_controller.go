@@ -14,6 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
+// Package controller contains the Valkey reconciliation logic.
 package controller
 
 import (
@@ -58,12 +59,13 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
-	hyperv1 "hyperspike.io/valkey-operator/api/v1"
-	globalcfg "hyperspike.io/valkey-operator/cfg"
+	valkeyv1 "github.com/turboslop/valkey-operator/api/v1"
+	globalcfg "github.com/turboslop/valkey-operator/cfg"
 )
 
+// Controller resource constants shared across reconciliation helpers and tests.
 const (
-	DefaultVolumeSize = "8Gi"
+	defaultVolumeSize = "8Gi"
 	Metrics           = "metrics"
 	LoadBalancer      = "LoadBalancer"
 	ValkeyProxy       = "valkey-proxy"
@@ -108,9 +110,9 @@ type ValkeyReconciler struct {
 //go:embed scripts/*
 var scripts embed.FS
 
-// +kubebuilder:rbac:groups=hyperspike.io,resources=valkeys,verbs=get;list;watch;create;update;patch;delete
-// +kubebuilder:rbac:groups=hyperspike.io,resources=valkeys/status,verbs=get;update;patch
-// +kubebuilder:rbac:groups=hyperspike.io,resources=valkeys/finalizers,verbs=update
+// +kubebuilder:rbac:groups=turboslop.io,resources=valkeys,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=turboslop.io,resources=valkeys/status,verbs=get;update;patch
+// +kubebuilder:rbac:groups=turboslop.io,resources=valkeys/finalizers,verbs=update
 // +kubebuilder:rbac:groups=cert-manager.io,resources=clusterissuers;issuers,verbs=get;list;watch
 // +kubebuilder:rbac:groups=cert-manager.io,resources=certificates,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups="",resources=configmaps,verbs=get;list;watch;create;update;patch;delete
@@ -124,20 +126,14 @@ var scripts embed.FS
 // +kubebuilder:rbac:groups=storage.k8s.io,resources=storageclasses,verbs=get;list;watch
 // +kubebuilder:rbac:groups=monitoring.coreos.com,resources=servicemonitors,verbs=get;list;watch;create;update;patch;delete
 
-// Reconcile is part of the main kubernetes reconciliation loop which aims to
-// move the current state of the cluster closer to the desired state.
-// TODO(user): Modify the Reconcile function to compare the state specified by
-// the Valkey object against the actual cluster state, and then
-// perform operations to make the cluster state reflect the state specified by
-// the user.
-//
-// For more details, check Reconcile and its Result here:
-// - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.18.2/pkg/reconcile
+// Reconcile creates or updates the Kubernetes resources for a Valkey custom
+// resource, then drives the runtime Valkey cluster toward the requested shard
+// and replica topology.
 func (r *ValkeyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	var err error
 	_ = log.FromContext(ctx)
 
-	valkey := &hyperv1.Valkey{}
+	valkey := &valkeyv1.Valkey{}
 	if err = r.Get(ctx, req.NamespacedName, valkey); err != nil {
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
@@ -232,7 +228,7 @@ func (r *ValkeyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 		return ctrl.Result{Requeue: true, RequeueAfter: time.Second * 5}, nil
 	}
 	if externalAccess && externalType == LoadBalancer {
-		if err := r.setClusterAnnounceIp(ctx, valkey); err != nil {
+		if err := r.setClusterAnnounceIP(ctx, valkey); err != nil {
 			return ctrl.Result{Requeue: true, RequeueAfter: time.Second * 5}, nil
 		}
 	}
@@ -240,7 +236,7 @@ func (r *ValkeyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 	return ctrl.Result{}, nil
 }
 
-func (r *ValkeyReconciler) validateValkeySpec(valkey *hyperv1.Valkey) error {
+func (r *ValkeyReconciler) validateValkeySpec(valkey *valkeyv1.Valkey) error {
 	config := r.GlobalConfig
 	if config == nil {
 		config = globalcfg.Defaults()
@@ -270,7 +266,7 @@ func (r *ValkeyReconciler) validateValkeySpec(valkey *hyperv1.Valkey) error {
 	return nil
 }
 
-func labels(valkey *hyperv1.Valkey) map[string]string {
+func labels(valkey *valkeyv1.Valkey) map[string]string {
 	l := make(map[string]string, len(valkey.Labels)+3)
 	for k, v := range valkey.Labels {
 		l[k] = v
@@ -281,11 +277,11 @@ func labels(valkey *hyperv1.Valkey) map[string]string {
 	return l
 }
 
-func annotations(valkey *hyperv1.Valkey) map[string]string {
+func annotations(valkey *valkeyv1.Valkey) map[string]string {
 	return valkey.Annotations
 }
 
-func (r *ValkeyReconciler) getCACertificate(ctx context.Context, valkey *hyperv1.Valkey) (string, error) {
+func (r *ValkeyReconciler) getCACertificate(ctx context.Context, valkey *valkeyv1.Valkey) (string, error) {
 	logger := log.FromContext(ctx)
 
 	cert := &certv1.Certificate{}
@@ -317,7 +313,7 @@ func (r *ValkeyReconciler) getCACertificate(ctx context.Context, valkey *hyperv1
 	return string(tls.Data["ca.crt"]), nil
 }
 
-func (r *ValkeyReconciler) checkState(ctx context.Context, valkey *hyperv1.Valkey) error {
+func (r *ValkeyReconciler) checkState(ctx context.Context, valkey *valkeyv1.Valkey) error {
 	logger := log.FromContext(ctx)
 
 	initHost := fmt.Sprintf("%s.%s.svc", valkey.Name, valkey.Namespace)
@@ -349,7 +345,7 @@ func (r *ValkeyReconciler) checkState(ctx context.Context, valkey *hyperv1.Valke
 	return nil
 }
 
-func (r *ValkeyReconciler) upsertService(ctx context.Context, valkey *hyperv1.Valkey) error {
+func (r *ValkeyReconciler) upsertService(ctx context.Context, valkey *valkeyv1.Valkey) error {
 	logger := log.FromContext(ctx)
 
 	logger.Info("upserting service")
@@ -392,7 +388,7 @@ func (r *ValkeyReconciler) upsertService(ctx context.Context, valkey *hyperv1.Va
 	return nil
 }
 
-func (r *ValkeyReconciler) upsertConfigMap(ctx context.Context, valkey *hyperv1.Valkey) error {
+func (r *ValkeyReconciler) upsertConfigMap(ctx context.Context, valkey *valkeyv1.Valkey) error {
 	logger := log.FromContext(ctx)
 
 	logger.Info("upserting configmap")
@@ -461,11 +457,11 @@ func (r *ValkeyReconciler) upsertConfigMap(ctx context.Context, valkey *hyperv1.
 type valkeyConfigTemplateData struct {
 	TLS                          bool
 	ClusterPreferredEndpointType string
-	Modules                      []hyperv1.ModuleConfig
+	Modules                      []valkeyv1.ModuleConfig
 	ExtraConfig                  string
 }
 
-func renderValkeyConfig(valkey *hyperv1.Valkey) (string, error) {
+func renderValkeyConfig(valkey *valkeyv1.Valkey) (string, error) {
 	defaultConfTmpl, err := scripts.ReadFile("scripts/valkey.conf")
 	if err != nil {
 		return "", err
@@ -511,7 +507,7 @@ func isBareValkeyConfigArg(value string) bool {
 	return true
 }
 
-func (r *ValkeyReconciler) GetPassword(ctx context.Context, valkey *hyperv1.Valkey) (string, error) {
+func (r *ValkeyReconciler) getPassword(ctx context.Context, valkey *valkeyv1.Valkey) (string, error) {
 	logger := log.FromContext(ctx)
 
 	if valkey.Spec.ServicePassword != nil {
@@ -526,7 +522,7 @@ func (r *ValkeyReconciler) GetPassword(ctx context.Context, valkey *hyperv1.Valk
 	return string(secret.Data["password"]), nil
 }
 
-func (r *ValkeyReconciler) buildCluster(ctx context.Context, valkey *hyperv1.Valkey) (*valkeyCluster, func(), error) {
+func (r *ValkeyReconciler) buildCluster(ctx context.Context, valkey *valkeyv1.Valkey) (*valkeyCluster, func(), error) {
 
 	nodes, closeNodes, err := r.getClusterNodes(ctx, valkey)
 	shards := make([]*valkeyShard, valkey.Spec.Shards)
@@ -552,7 +548,7 @@ func (r *ValkeyReconciler) buildCluster(ctx context.Context, valkey *hyperv1.Val
 	return cluster, closeNodes, err
 }
 
-func (r *ValkeyReconciler) initCluster(ctx context.Context, valkey *hyperv1.Valkey) error {
+func (r *ValkeyReconciler) initCluster(ctx context.Context, valkey *valkeyv1.Valkey) error {
 	logger := log.FromContext(ctx)
 
 	logger.Info("initializing cluster")
@@ -627,10 +623,10 @@ func (r *ValkeyReconciler) initCluster(ctx context.Context, valkey *hyperv1.Valk
 				if slices.Contains(flags, "myself") || slices.Contains(flags, "master") {
 					continue
 				}
-				peerId := parts[0]
+				peerID := parts[0]
 				connected := parts[7]
 				if connected == "disconnected" {
-					_ = node.client.Do(ctx, node.client.B().ClusterForget().NodeId(peerId).Build()).Error()
+					_ = node.client.Do(ctx, node.client.B().ClusterForget().NodeId(peerID).Build()).Error()
 				}
 			}
 		}
@@ -743,7 +739,7 @@ func (r *ValkeyReconciler) initCluster(ctx context.Context, valkey *hyperv1.Valk
 	return nil
 }
 
-func (r *ValkeyReconciler) getClusterNodes(ctx context.Context, valkey *hyperv1.Valkey) (map[string]*valkeyNode, func(), error) {
+func (r *ValkeyReconciler) getClusterNodes(ctx context.Context, valkey *valkeyv1.Valkey) (map[string]*valkeyNode, func(), error) {
 	logger := log.FromContext(ctx)
 
 	closeFuncs := make([]func(), 0)
@@ -851,7 +847,7 @@ func (r *ValkeyReconciler) getClusterNodes(ctx context.Context, valkey *hyperv1.
 }
 
 // getClient returns a valkey client for the given address
-func (r *ValkeyReconciler) getClient(ctx context.Context, valkey *hyperv1.Valkey, address string, single bool) (valkeyClient.Client, error) {
+func (r *ValkeyReconciler) getClient(ctx context.Context, valkey *valkeyv1.Valkey, address string, single bool) (valkeyClient.Client, error) {
 	logger := log.FromContext(ctx)
 
 	opt := valkeyClient.ClientOption{
@@ -860,7 +856,7 @@ func (r *ValkeyReconciler) getClient(ctx context.Context, valkey *hyperv1.Valkey
 	}
 	if !valkey.Spec.AnonymousAuth {
 		var err error
-		opt.Password, err = r.GetPassword(ctx, valkey)
+		opt.Password, err = r.getPassword(ctx, valkey)
 		if err != nil {
 			logger.Error(err, "failed to get password")
 			return nil, err
@@ -896,7 +892,7 @@ func (r *ValkeyReconciler) getClient(ctx context.Context, valkey *hyperv1.Valkey
 	return vc, nil
 }
 
-func (r *ValkeyReconciler) setClusterAnnounceIp(ctx context.Context, valkey *hyperv1.Valkey) error {
+func (r *ValkeyReconciler) setClusterAnnounceIP(ctx context.Context, valkey *valkeyv1.Valkey) error {
 	logger := log.FromContext(ctx)
 
 	logger.Info("setting cluster announce ip")
@@ -959,7 +955,7 @@ func (r *ValkeyReconciler) setClusterAnnounceIp(ctx context.Context, valkey *hyp
 	return nil
 }
 
-func (r *ValkeyReconciler) fetchExternalIPs(ctx context.Context, valkey *hyperv1.Valkey) (map[string]string, error) {
+func (r *ValkeyReconciler) fetchExternalIPs(ctx context.Context, valkey *valkeyv1.Valkey) (map[string]string, error) {
 	logger := log.FromContext(ctx)
 
 	ips := map[string]string{}
@@ -987,7 +983,7 @@ func (r *ValkeyReconciler) fetchExternalIPs(ctx context.Context, valkey *hyperv1
 	return ips, nil
 }
 
-func (r *ValkeyReconciler) upsertExternalAccessLBSvc(ctx context.Context, valkey *hyperv1.Valkey) error {
+func (r *ValkeyReconciler) upsertExternalAccessLBSvc(ctx context.Context, valkey *valkeyv1.Valkey) error {
 	logger := log.FromContext(ctx)
 
 	logger.Info("upserting external access (NodePort/LoadBalancer)")
@@ -1047,7 +1043,7 @@ func (r *ValkeyReconciler) upsertExternalAccessLBSvc(ctx context.Context, valkey
 	return nil
 }
 
-func (r *ValkeyReconciler) upsertExternalAccessProxySvc(ctx context.Context, valkey *hyperv1.Valkey) error {
+func (r *ValkeyReconciler) upsertExternalAccessProxySvc(ctx context.Context, valkey *valkeyv1.Valkey) error {
 	logger := log.FromContext(ctx)
 
 	logger.Info("upserting external proxy load balancer service")
@@ -1096,7 +1092,7 @@ func (r *ValkeyReconciler) upsertExternalAccessProxySvc(ctx context.Context, val
 	return nil
 }
 
-func (r *ValkeyReconciler) upsertProxyCertificate(ctx context.Context, valkey *hyperv1.Valkey) error {
+func (r *ValkeyReconciler) upsertProxyCertificate(ctx context.Context, valkey *valkeyv1.Valkey) error {
 	logger := log.FromContext(ctx)
 
 	logger.Info("upserting proxy certificate")
@@ -1158,7 +1154,7 @@ func (r *ValkeyReconciler) upsertProxyCertificate(ctx context.Context, valkey *h
 	return nil
 }
 
-func (r *ValkeyReconciler) upsertExternalAccessProxySecret(ctx context.Context, valkey *hyperv1.Valkey) error {
+func (r *ValkeyReconciler) upsertExternalAccessProxySecret(ctx context.Context, valkey *valkeyv1.Valkey) error {
 	logger := log.FromContext(ctx)
 
 	logger.Info("upserting external proxy configmap")
@@ -1206,7 +1202,7 @@ func (r *ValkeyReconciler) upsertExternalAccessProxySecret(ctx context.Context, 
 	downstreamPassword := ""
 	upstreamPassword := ""
 	if !valkey.Spec.AnonymousAuth {
-		password, err := r.GetPassword(ctx, valkey)
+		password, err := r.getPassword(ctx, valkey)
 		if err != nil {
 			logger.Error(err, "failed to get password")
 			return err
@@ -1302,7 +1298,7 @@ admin:
 	return nil
 }
 
-func (r *ValkeyReconciler) upsertExternalAccessProxyDeployment(ctx context.Context, valkey *hyperv1.Valkey) error {
+func (r *ValkeyReconciler) upsertExternalAccessProxyDeployment(ctx context.Context, valkey *valkeyv1.Valkey) error {
 	logger := log.FromContext(ctx)
 
 	logger.Info("upserting external proxy deployment")
@@ -1420,7 +1416,7 @@ func (r *ValkeyReconciler) upsertExternalAccessProxyDeployment(ctx context.Conte
 	return nil
 }
 
-func (r *ValkeyReconciler) upsertServiceHeadless(ctx context.Context, valkey *hyperv1.Valkey) error {
+func (r *ValkeyReconciler) upsertServiceHeadless(ctx context.Context, valkey *valkeyv1.Valkey) error {
 	logger := log.FromContext(ctx)
 
 	logger.Info("upserting service")
@@ -1470,7 +1466,7 @@ func (r *ValkeyReconciler) upsertServiceHeadless(ctx context.Context, valkey *hy
 	return nil
 }
 
-func (r *ValkeyReconciler) upsertMetricsService(ctx context.Context, valkey *hyperv1.Valkey) error {
+func (r *ValkeyReconciler) upsertMetricsService(ctx context.Context, valkey *valkeyv1.Valkey) error {
 	logger := log.FromContext(ctx)
 
 	logger.Info("upserting metrics service")
@@ -1519,7 +1515,7 @@ func (r *ValkeyReconciler) upsertMetricsService(ctx context.Context, valkey *hyp
 	return nil
 }
 
-func (r *ValkeyReconciler) upsertServiceMonitor(ctx context.Context, valkey *hyperv1.Valkey) error {
+func (r *ValkeyReconciler) upsertServiceMonitor(ctx context.Context, valkey *valkeyv1.Valkey) error {
 	logger := log.FromContext(ctx)
 
 	logger.Info("upserting prometheus service monitor")
@@ -1573,7 +1569,7 @@ func (r *ValkeyReconciler) upsertServiceMonitor(ctx context.Context, valkey *hyp
 	return nil
 }
 
-func (r *ValkeyReconciler) upsertCertificate(ctx context.Context, valkey *hyperv1.Valkey) error {
+func (r *ValkeyReconciler) upsertCertificate(ctx context.Context, valkey *valkeyv1.Valkey) error {
 	logger := log.FromContext(ctx)
 
 	logger.Info("upserting certificate")
@@ -1636,21 +1632,21 @@ func (r *ValkeyReconciler) upsertCertificate(ctx context.Context, valkey *hyperv
 	return nil
 }
 
-func getServicePasswordKey(valkey *hyperv1.Valkey) string {
+func getServicePasswordKey(valkey *valkeyv1.Valkey) string {
 	if valkey.Spec.ServicePassword == nil {
 		return "password"
 	}
 	return valkey.Spec.ServicePassword.Key
 }
 
-func getServicePasswordName(valkey *hyperv1.Valkey) string {
+func getServicePasswordName(valkey *valkeyv1.Valkey) string {
 	if valkey.Spec.ServicePassword == nil {
 		return valkey.Name
 	}
 	return valkey.Spec.ServicePassword.Name
 }
 
-func (r *ValkeyReconciler) getServicePassword(ctx context.Context, valkey *hyperv1.Valkey) (string, error) {
+func (r *ValkeyReconciler) getServicePassword(ctx context.Context, valkey *valkeyv1.Valkey) (string, error) {
 	logger := log.FromContext(ctx)
 
 	secret := &corev1.Secret{}
@@ -1668,7 +1664,7 @@ func (r *ValkeyReconciler) getServicePassword(ctx context.Context, valkey *hyper
 	return string(secret.Data[getServicePasswordKey(valkey)]), nil
 }
 
-func (r *ValkeyReconciler) upsertSecret(ctx context.Context, valkey *hyperv1.Valkey, once bool) (string, error) {
+func (r *ValkeyReconciler) upsertSecret(ctx context.Context, valkey *valkeyv1.Valkey, once bool) (string, error) {
 	logger := log.FromContext(ctx)
 
 	if valkey.Spec.ServicePassword != nil {
@@ -1714,7 +1710,7 @@ func (r *ValkeyReconciler) upsertSecret(ctx context.Context, valkey *hyperv1.Val
 	return string(secret.Data["password"]), nil
 }
 
-func (r *ValkeyReconciler) upsertServiceAccount(ctx context.Context, valkey *hyperv1.Valkey) error {
+func (r *ValkeyReconciler) upsertServiceAccount(ctx context.Context, valkey *valkeyv1.Valkey) error {
 	logger := log.FromContext(ctx)
 
 	logger.Info("upserting service account")
@@ -1830,7 +1826,7 @@ func hasValkeyControllerReference(ownerRefs []metav1.OwnerReference, valkeyRef m
 	return false
 }
 
-func (r *ValkeyReconciler) balanceNodes(ctx context.Context, valkey *hyperv1.Valkey) error {
+func (r *ValkeyReconciler) balanceNodes(ctx context.Context, valkey *valkeyv1.Valkey) error {
 	logger := log.FromContext(ctx)
 
 	// connect to the first node!
@@ -1904,10 +1900,10 @@ func (r *ValkeyReconciler) balanceNodes(ctx context.Context, valkey *hyperv1.Val
 		logger.Error(err, "failed to get myid")
 		return err
 	}
-	for ipId, id := range ids {
+	for ipID, id := range ids {
 		found := false
 		for ipPod := range pods {
-			if ipId == ipPod {
+			if ipID == ipPod {
 				found = true
 				break
 			}
@@ -1917,16 +1913,16 @@ func (r *ValkeyReconciler) balanceNodes(ctx context.Context, valkey *hyperv1.Val
 				continue
 			}
 			if err := vClient.Do(ctx, vClient.B().ClusterForget().NodeId(id).Build()).Error(); err != nil {
-				logger.Error(err, "failed to forget node "+ipId+"/"+id)
+				logger.Error(err, "failed to forget node "+ipID+"/"+id)
 				return err
 			}
-			r.Recorder.Event(valkey, "Normal", "Updated", fmt.Sprintf("Node %s removed from %s/%s", ipId, valkey.Namespace, valkey.Name))
+			r.Recorder.Event(valkey, "Normal", "Updated", fmt.Sprintf("Node %s removed from %s/%s", ipID, valkey.Namespace, valkey.Name))
 		}
 	}
 	for ipPod, pod := range pods {
 		found := false
-		for ipId := range ids {
-			if ipPod == ipId {
+		for ipID := range ids {
+			if ipPod == ipID {
 				found = true
 				break
 			}
@@ -1971,7 +1967,7 @@ func (r *ValkeyReconciler) balanceNodes(ctx context.Context, valkey *hyperv1.Val
 	return nil
 }
 
-func (r *ValkeyReconciler) getPodIPs(ctx context.Context, valkey *hyperv1.Valkey) (map[string]string, error) {
+func (r *ValkeyReconciler) getPodIPs(ctx context.Context, valkey *valkeyv1.Valkey) (map[string]string, error) {
 	logger := log.FromContext(ctx)
 
 	pods := &corev1.PodList{}
@@ -1986,7 +1982,7 @@ func (r *ValkeyReconciler) getPodIPs(ctx context.Context, valkey *hyperv1.Valkey
 	return ret, nil
 }
 
-func (r *ValkeyReconciler) getCertManagerIp(ctx context.Context) (string, error) {
+func (r *ValkeyReconciler) getCertManagerIP(ctx context.Context) (string, error) {
 	logger := log.FromContext(ctx)
 	pods := &corev1.PodList{}
 	l := map[string]string{
@@ -2002,7 +1998,7 @@ func (r *ValkeyReconciler) getCertManagerIp(ctx context.Context) (string, error)
 	return "", nil
 }
 
-func (r *ValkeyReconciler) getClusterDomain(valkey *hyperv1.Valkey) string {
+func (r *ValkeyReconciler) getClusterDomain(valkey *valkeyv1.Valkey) string {
 	if valkey.Spec.ClusterDomain != "" {
 		return valkey.Spec.ClusterDomain
 	}
@@ -2013,7 +2009,7 @@ func (r *ValkeyReconciler) getClusterDomain(valkey *hyperv1.Valkey) string {
 	return ""
 }
 
-func (r *ValkeyReconciler) detectClusterDomain(ctx context.Context, valkey *hyperv1.Valkey) string {
+func (r *ValkeyReconciler) detectClusterDomain(ctx context.Context, valkey *valkeyv1.Valkey) string {
 	logger := log.FromContext(ctx)
 
 	logger.Info("detecting cluster domain")
@@ -2026,7 +2022,7 @@ func (r *ValkeyReconciler) detectClusterDomain(ctx context.Context, valkey *hype
 	if clusterDomain == "" {
 		clusterDomain = "cluster.local"
 	}
-	ip, err := r.getCertManagerIp(ctx)
+	ip, err := r.getCertManagerIP(ctx)
 	if err != nil {
 		logger.Error(err, "failed to get cert-manager IP, using default cluster domain")
 		ip = ""
@@ -2097,7 +2093,7 @@ func (r *ValkeyReconciler) waitForPod(ctx context.Context, name, namespace strin
 }
 */
 
-func getNodeNames(valkey *hyperv1.Valkey) string {
+func getNodeNames(valkey *valkeyv1.Valkey) string {
 	var nodes []string
 	for i := 0; i < int(valkey.Spec.Shards)*(int(valkey.Spec.Replicas)+1); i++ {
 		nodes = append(nodes, valkey.Name+"-"+fmt.Sprint(i)+"."+valkey.Name+"-headless")
@@ -2105,7 +2101,7 @@ func getNodeNames(valkey *hyperv1.Valkey) string {
 	return strings.Join(nodes, " ")
 }
 
-func (r *ValkeyReconciler) upsertPodDisruptionBudget(ctx context.Context, valkey *hyperv1.Valkey) error {
+func (r *ValkeyReconciler) upsertPodDisruptionBudget(ctx context.Context, valkey *valkeyv1.Valkey) error {
 	logger := log.FromContext(ctx)
 
 	logger.Info("upserting pod disruption budget")
@@ -2146,7 +2142,7 @@ func (r *ValkeyReconciler) upsertPodDisruptionBudget(ctx context.Context, valkey
 	return nil
 }
 
-func (r *ValkeyReconciler) exporter(valkey *hyperv1.Valkey) corev1.Container {
+func (r *ValkeyReconciler) exporter(valkey *valkeyv1.Valkey) corev1.Container {
 	image := r.GlobalConfig.SidecarImage
 	if valkey.Spec.ExporterImage != "" {
 		image = valkey.Spec.ExporterImage
@@ -2260,7 +2256,7 @@ func (r *ValkeyReconciler) exporter(valkey *hyperv1.Valkey) corev1.Container {
 	return container
 }
 
-func generatePVC(valkey *hyperv1.Valkey) corev1.PersistentVolumeClaim {
+func generatePVC(valkey *valkeyv1.Valkey) corev1.PersistentVolumeClaim {
 	pv := corev1.PersistentVolumeClaim{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:   "valkey-data",
@@ -2272,7 +2268,7 @@ func generatePVC(valkey *hyperv1.Valkey) corev1.PersistentVolumeClaim {
 			},
 			Resources: corev1.VolumeResourceRequirements{
 				Requests: corev1.ResourceList{
-					"storage": func(s string) resource.Quantity { return resource.MustParse(s) }(DefaultVolumeSize),
+					"storage": func(s string) resource.Quantity { return resource.MustParse(s) }(defaultVolumeSize),
 				},
 			},
 		},
@@ -2294,13 +2290,13 @@ func generatePVC(valkey *hyperv1.Valkey) corev1.PersistentVolumeClaim {
 		}
 		_, ok := pv.Spec.Resources.Requests["storage"]
 		if !ok {
-			pv.Spec.Resources.Requests["storage"] = func(s string) resource.Quantity { return resource.MustParse(s) }(DefaultVolumeSize)
+			pv.Spec.Resources.Requests["storage"] = func(s string) resource.Quantity { return resource.MustParse(s) }(defaultVolumeSize)
 		}
 	}
 	return pv
 }
 
-func getResourceRequirements(valkey *hyperv1.Valkey) corev1.ResourceRequirements {
+func getResourceRequirements(valkey *valkeyv1.Valkey) corev1.ResourceRequirements {
 	if valkey.Spec.Resources != nil {
 		return *valkey.Spec.Resources
 	}
@@ -2348,7 +2344,7 @@ func getInitContainerResourceRequirements() corev1.ResourceRequirements {
 	}
 }
 
-func getRunAsUser(valkey *hyperv1.Valkey) *int64 {
+func getRunAsUser(valkey *valkeyv1.Valkey) *int64 {
 	if valkey.Spec.PlatformManagedSecurityContext {
 		return nil
 	}
@@ -2356,7 +2352,7 @@ func getRunAsUser(valkey *hyperv1.Valkey) *int64 {
 	return func(i int64) *int64 { return &i }(1001)
 }
 
-func getRunAsGroup(valkey *hyperv1.Valkey) *int64 {
+func getRunAsGroup(valkey *valkeyv1.Valkey) *int64 {
 	if valkey.Spec.PlatformManagedSecurityContext {
 		return nil
 	}
@@ -2364,7 +2360,7 @@ func getRunAsGroup(valkey *hyperv1.Valkey) *int64 {
 	return func(i int64) *int64 { return &i }(1001)
 }
 
-func getFSGroup(valkey *hyperv1.Valkey) *int64 {
+func getFSGroup(valkey *valkeyv1.Valkey) *int64 {
 	if valkey.Spec.PlatformManagedSecurityContext {
 		return nil
 	}
@@ -2372,7 +2368,7 @@ func getFSGroup(valkey *hyperv1.Valkey) *int64 {
 	return func(i int64) *int64 { return &i }(1001)
 }
 
-func getFSGroupChangePolicy(valkey *hyperv1.Valkey) *corev1.PodFSGroupChangePolicy {
+func getFSGroupChangePolicy(valkey *valkeyv1.Valkey) *corev1.PodFSGroupChangePolicy {
 	if valkey.Spec.PlatformManagedSecurityContext {
 		return nil
 	}
@@ -2380,7 +2376,7 @@ func getFSGroupChangePolicy(valkey *hyperv1.Valkey) *corev1.PodFSGroupChangePoli
 	return func(s corev1.PodFSGroupChangePolicy) *corev1.PodFSGroupChangePolicy { return &s }(corev1.FSGroupChangeAlways)
 }
 
-func getSupplementalGroups(valkey *hyperv1.Valkey) []int64 {
+func getSupplementalGroups(valkey *valkeyv1.Valkey) []int64 {
 	if valkey.Spec.PlatformManagedSecurityContext {
 		return nil
 	}
@@ -2388,7 +2384,7 @@ func getSupplementalGroups(valkey *hyperv1.Valkey) []int64 {
 	return []int64{}
 }
 
-func getSELinuxOptions(valkey *hyperv1.Valkey) *corev1.SELinuxOptions {
+func getSELinuxOptions(valkey *valkeyv1.Valkey) *corev1.SELinuxOptions {
 	if valkey.Spec.PlatformManagedSecurityContext {
 		return nil
 	}
@@ -2396,7 +2392,7 @@ func getSELinuxOptions(valkey *hyperv1.Valkey) *corev1.SELinuxOptions {
 	return &corev1.SELinuxOptions{}
 }
 
-func buildValkeyCommand(valkey *hyperv1.Valkey) []string {
+func buildValkeyCommand(valkey *valkeyv1.Valkey) []string {
 	if !valkey.Spec.AnonymousAuth {
 		return []string{
 			"sh",
@@ -2410,7 +2406,7 @@ func buildValkeyCommand(valkey *hyperv1.Valkey) []string {
 	}
 }
 
-func (r *ValkeyReconciler) upsertStatefulSet(ctx context.Context, valkey *hyperv1.Valkey) error {
+func (r *ValkeyReconciler) upsertStatefulSet(ctx context.Context, valkey *valkeyv1.Valkey) error {
 	logger := log.FromContext(ctx)
 
 	logger.Info("upserting statefulset")
@@ -2826,7 +2822,7 @@ func (r *ValkeyReconciler) upsertStatefulSet(ctx context.Context, valkey *hyperv
 	return nil
 }
 
-func validateVolumeClaimTemplate(valkey *hyperv1.Valkey, existingSts *appsv1.StatefulSet, defaultStorageClass string) error {
+func validateVolumeClaimTemplate(valkey *valkeyv1.Valkey, existingSts *appsv1.StatefulSet, defaultStorageClass string) error {
 	if len(existingSts.Spec.VolumeClaimTemplates) == 0 {
 		return fmt.Errorf("storage has been added but cannot be updated in a statefulset")
 	}
@@ -2870,7 +2866,7 @@ func (r *ValkeyReconciler) defaultStorageClass(ctx context.Context) string {
 // SetupWithManager sets up the controller with the Manager.
 func (r *ValkeyReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
-		For(&hyperv1.Valkey{}).
+		For(&valkeyv1.Valkey{}).
 		Complete(r)
 }
 

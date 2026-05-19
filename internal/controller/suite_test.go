@@ -34,7 +34,7 @@ import (
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
-	hyperspikeiov1 "hyperspike.io/valkey-operator/api/v1"
+	valkeyv1 "github.com/turboslop/valkey-operator/api/v1"
 	// +kubebuilder:scaffold:imports
 )
 
@@ -74,7 +74,7 @@ var _ = BeforeSuite(func() {
 	Expect(err).NotTo(HaveOccurred())
 	Expect(cfg).NotTo(BeNil())
 
-	err = hyperspikeiov1.AddToScheme(scheme.Scheme)
+	err = valkeyv1.AddToScheme(scheme.Scheme)
 	Expect(err).NotTo(HaveOccurred())
 
 	// +kubebuilder:scaffold:scheme

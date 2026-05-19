@@ -4,9 +4,9 @@ kind: CustomResourceDefinition
 metadata:
   annotations:
     controller-gen.kubebuilder.io/version: v0.19.0
-  name: valkeys.hyperspike.io
+  name: valkeys.turboslop.io
 spec:
-  group: hyperspike.io
+  group: turboslop.io
   names:
     kind: Valkey
     listKind: ValkeyList

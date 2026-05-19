@@ -69,32 +69,6 @@ rules:
   - list
   - watch
 - apiGroups:
-  - hyperspike.io
-  resources:
-  - valkeys
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - hyperspike.io
-  resources:
-  - valkeys/finalizers
-  verbs:
-  - update
-- apiGroups:
-  - hyperspike.io
-  resources:
-  - valkeys/status
-  verbs:
-  - get
-  - patch
-  - update
-- apiGroups:
   - monitoring.coreos.com
   resources:
   - servicemonitors
@@ -126,3 +100,29 @@ rules:
   - get
   - list
   - watch
+- apiGroups:
+  - turboslop.io
+  resources:
+  - valkeys
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - turboslop.io
+  resources:
+  - valkeys/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - turboslop.io
+  resources:
+  - valkeys/status
+  verbs:
+  - get
+  - patch
+  - update

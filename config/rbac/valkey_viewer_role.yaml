@@ -8,7 +8,7 @@ metadata:
   name: valkey-viewer-role
 rules:
 - apiGroups:
-  - hyperspike.io
+  - turboslop.io
   resources:
   - valkeys
   verbs:
@@ -16,7 +16,7 @@ rules:
   - list
   - watch
 - apiGroups:
-  - hyperspike.io
+  - turboslop.io
   resources:
   - valkeys/status
   verbs:
