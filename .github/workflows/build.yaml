@@ -3,7 +3,7 @@ name: Build
 on:
   pull_request:
     paths:
-      - '**.go'
+      - '**/*.go'
       - go.mod
       - go.sum
       - Makefile
@@ -11,6 +11,8 @@ on:
       - .github/workflows/build.yaml
       - internal/**
       - cmd/**
+      - api/**
+      - config/**
 
 env:
   REGISTRY: ghcr.io

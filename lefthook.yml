@@ -6,6 +6,6 @@ pre-commit:
     build:
       run: go build ./...
     test:
-      run: go test ./internal/controller/ -count=1
+      run: go test $(go list ./... | grep -v /e2e) -short
     vet:
       run: go vet ./...

@@ -6,18 +6,34 @@ on:
 
 permissions:
   contents: read
+  pull-requests: read
 
 jobs:
   check-pr-title:
     runs-on: ubuntu-latest
     steps:
-      - name: Check PR title format
+      - name: Check conventional PR title and commits
         env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
           TITLE: ${{ github.event.pull_request.title }}
+          VALID_SUBJECT: '^(feat|fix|chore|docs|refactor|test|ci|perf|style|build|revert)(\(.+\))?: .{1,}$'
         run: |
-          if ! echo "$TITLE" | grep -qE '^(feat|fix|chore|docs|refactor|test|ci|perf|style|build|revert)(\(.+\))?: .{1,}$'; then
+          if ! echo "$TITLE" | grep -qE "$VALID_SUBJECT"; then
             echo "PR title must follow conventional commits format:"
             echo "  feat|fix|chore|docs|refactor|test|ci|perf|style|build|revert(<scope>): <description>"
             echo "Got: $TITLE"
             exit 1
           fi
+
+          gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}/commits" --paginate \
+            --jq '.[].commit.message | split("\n")[0]' > /tmp/commit-subjects
+
+          while IFS= read -r subject; do
+            if ! echo "$subject" | grep -qE "$VALID_SUBJECT"; then
+              echo "Commit subject must follow conventional commits format:"
+              echo "  feat|fix|chore|docs|refactor|test|ci|perf|style|build|revert(<scope>): <description>"
+              echo "Got: $subject"
+              exit 1
+            fi
+          done < /tmp/commit-subjects

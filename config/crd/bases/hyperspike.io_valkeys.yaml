@@ -23,8 +23,8 @@ spec:
     - jsonPath: .metadata.creationTimestamp
       name: Age
       type: date
-    - jsonPath: .spec.nodes
-      name: Nodes
+    - jsonPath: .spec.shards
+      name: Shards
       type: integer
     - jsonPath: .spec.replicas
       name: Replicas
@@ -231,11 +231,6 @@ spec:
                   type: string
                 description: Node Selector
                 type: object
-              nodes:
-                default: 3
-                description: Number of shards. Each node is a primary
-                format: int32
-                type: integer
               platformManagedSecurityContext:
                 default: false
                 description: |-
@@ -264,6 +259,7 @@ spec:
                   Note: This field currently creates extra primary nodes.
                   Follow  https://github.com/hyperspike/valkey-operator/issues/186 for details
                 format: int32
+                minimum: 0
                 type: integer
               resources:
                 description: Resources requirements and limits for the Valkey Server
@@ -363,6 +359,12 @@ spec:
                 - key
                 type: object
                 x-kubernetes-map-type: atomic
+              shards:
+                default: 3
+                description: Number of shards. Each node is a primary
+                format: int32
+                minimum: 1
+                type: integer
               storage:
                 description: |-
                   Persistent volume claim. The kind and metadata can be omitted, but the spec
@@ -875,6 +877,9 @@ spec:
                   - type
                   type: object
                 type: array
+                x-kubernetes-list-map-keys:
+                - type
+                x-kubernetes-list-type: map
               ready:
                 type: boolean
             type: object

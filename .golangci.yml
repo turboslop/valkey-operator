@@ -5,27 +5,61 @@ linters:
   default: standard
   enable:
     - copyloopvar
+    - cyclop
+    - depguard
     - dupl
     - errcheck
+    - errorlint
+    - funlen
     - ginkgolinter
     - goconst
+    - gocritic
     - gocyclo
     - gosec
     - govet
     - ineffassign
+    - interfacebloat
     - lll
     - misspell
     - nakedret
+    - nestif
+    - nilnil
+    - nolintlint
     - prealloc
+    - revive
     - staticcheck
     - unconvert
     - unparam
     - unused
+    - wrapcheck
   settings:
+    cyclop:
+      max-complexity: 15
+      package-average: 0
+    depguard:
+      rules:
+        controller-boundaries:
+          list-mode: lax
+          files:
+            - internal/controller/**/*.go
+            - "!internal/controller/**/*_test.go"
+          deny:
+            - pkg: net/http
+              desc: controller code should not bypass Kubernetes/client abstractions with direct HTTP calls
+            - pkg: os/exec
+              desc: controller code should not shell out during reconciliation
+    funlen:
+      lines: 200
+      statements: 100
     lll:
       line-length: 256
     gocyclo:
       min-complexity: 15
+    nestif:
+      min-complexity: 6
+    nolintlint:
+      require-specific: true
+      allow-unused: false
   exclusions:
     generated: lax
     rules:
@@ -45,10 +79,37 @@ linters:
           - errcheck
       - path: cmd/
         linters:
+          - cyclop
           - gocyclo
+      - path: cmd/manager/main\.go
+        linters:
+          - nestif
+          - wrapcheck
+      - path: cmd/sidecar/
+        linters:
+          - gocritic
+          - revive
       - path: internal/controller/valkey_controller\.go
         linters:
+          - cyclop
+          - gocritic
           - gocyclo
+          - nestif
+          - revive
+          - wrapcheck
+      - path: cfg/config\.go
+        linters:
+          - revive
+      - path: internal/sidecar/init\.go
+        linters:
+          - revive
+      - path: test/e2e/
+        linters:
+          - revive
+      - path: test/utils/utils\.go
+        linters:
+          - revive
+          - wrapcheck
     paths:
       - third_party$
       - builtin$

@@ -37,7 +37,8 @@ type ValkeySpec struct {
 
 	// Number of shards. Each node is a primary
 	// +kubebuilder:default:=3
-	Shards int32 `json:"nodes,omitempty"`
+	// +kubebuilder:validation:Minimum=1
+	Shards int32 `json:"shards,omitempty"`
 
 	// Number of replicas for each node.
 	//
@@ -45,6 +46,7 @@ type ValkeySpec struct {
 	// Follow  https://github.com/hyperspike/valkey-operator/issues/186 for details
 	//
 	// +kubebuilder:default:=0
+	// +kubebuilder:validation:Minimum=0
 	Replicas int32 `json:"replicas,omitempty"`
 
 	// Turn on an init container to set permissions on the persistent volume
@@ -214,6 +216,8 @@ type LoadBalancerSettings struct {
 // ValkeyStatus defines the observed state of Valkey
 type ValkeyStatus struct {
 	// Important: Run "make" to regenerate code after modifying this file
+	// +listType=map
+	// +listMapKey=type
 	Conditions []metav1.Condition `json:"conditions,omitempty" patchStrategy:"merge" patchMergeKey:"type" protobuf:"bytes,1,rep,name=conditions"`
 	Ready      bool               `json:"ready,omitempty"`
 }
@@ -225,7 +229,7 @@ type ValkeyStatus struct {
 // Valkey is the Schema for the valkeys API
 // +kubebuilder:printcolumn:name="Ready",type="boolean",JSONPath=`.status.ready`
 // +kubebuilder:printcolumn:name="Age",type="date",JSONPath=".metadata.creationTimestamp"
-// +kubebuilder:printcolumn:name="Nodes",type="integer",JSONPath=".spec.nodes"
+// +kubebuilder:printcolumn:name="Shards",type="integer",JSONPath=".spec.shards"
 // +kubebuilder:printcolumn:name="Replicas",type="integer",JSONPath=".spec.replicas"
 // +kubebuilder:printcolumn:name="Volumme Permissions",type="boolean",priority=1,JSONPath=".spec.volumePermissions"
 // +kubebuilder:printcolumn:name="Image",type="string",priority=1,JSONPath=".spec.image"

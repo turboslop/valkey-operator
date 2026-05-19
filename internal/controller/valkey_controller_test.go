@@ -25,11 +25,13 @@ import (
 	. "github.com/onsi/gomega"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/tools/record"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	hyperspikeiov1 "hyperspike.io/valkey-operator/api/v1"
+	globalcfg "hyperspike.io/valkey-operator/cfg"
 )
 
 var _ = Describe("Valkey Controller", func() {
@@ -71,8 +73,14 @@ var _ = Describe("Valkey Controller", func() {
 		It("should successfully reconcile the resource", func() {
 			By("Reconciling the created resource")
 			controllerReconciler := &ValkeyReconciler{
-				Client: k8sClient,
-				Scheme: k8sClient.Scheme(),
+				Client:   k8sClient,
+				Scheme:   k8sClient.Scheme(),
+				Recorder: record.NewFakeRecorder(32),
+				GlobalConfig: &globalcfg.Config{
+					ValkeyImage:  "valkey:test",
+					SidecarImage: "valkey-sidecar:test",
+					Nodes:        1,
+				},
 			}
 
 			_, err := controllerReconciler.Reconcile(ctx, reconcile.Request{

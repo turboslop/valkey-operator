@@ -134,7 +134,7 @@ var scripts embed.FS
 //
 // For more details, check Reconcile and its Result here:
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.18.2/pkg/reconcile
-func (r *ValkeyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) { // nolint:gocyclo
+func (r *ValkeyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	var err error
 	_ = log.FromContext(ctx)
 
@@ -242,22 +242,27 @@ func (r *ValkeyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 }
 
 func (r *ValkeyReconciler) validateValkeySpec(valkey *hyperv1.Valkey) error {
+	config := r.GlobalConfig
+	if config == nil {
+		config = globalcfg.Defaults()
+	}
+
 	if valkey.Spec.Shards < 1 {
-		valkey.Spec.Shards = r.GlobalConfig.Nodes
+		valkey.Spec.Shards = config.Nodes
 		if valkey.Spec.Shards < 1 {
 			return fmt.Errorf("shards must be at least 1, got %d", valkey.Spec.Shards)
 		}
 	}
 
 	if valkey.Spec.Image == "" {
-		valkey.Spec.Image = r.GlobalConfig.ValkeyImage
+		valkey.Spec.Image = config.ValkeyImage
 		if valkey.Spec.Image == "" {
 			return fmt.Errorf("valkey image must be specified")
 		}
 	}
 
 	if valkey.Spec.ExporterImage == "" {
-		valkey.Spec.ExporterImage = r.GlobalConfig.SidecarImage
+		valkey.Spec.ExporterImage = config.SidecarImage
 	}
 
 	if valkey.Labels == nil {
@@ -506,7 +511,7 @@ func (r *ValkeyReconciler) buildCluster(ctx context.Context, valkey *hyperv1.Val
 	return cluster, closeNodes, err
 }
 
-func (r *ValkeyReconciler) initCluster(ctx context.Context, valkey *hyperv1.Valkey) error { // nolint:gocyclo
+func (r *ValkeyReconciler) initCluster(ctx context.Context, valkey *hyperv1.Valkey) error {
 	logger := log.FromContext(ctx)
 
 	logger.Info("initializing cluster")
@@ -903,12 +908,12 @@ func (r *ValkeyReconciler) fetchExternalIPs(ctx context.Context, valkey *hyperv1
 			podName := strings.ReplaceAll(svc.Name, "-external", "")
 			if len(svc.Status.LoadBalancer.Ingress) == 0 {
 				logger.Info("external ip is empty")
-				return nil, nil
+				return ips, nil
 			}
 			ip := svc.Status.LoadBalancer.Ingress[0].IP
 			if ip == "" {
 				logger.Info("external ip is empty")
-				return nil, nil
+				return ips, nil
 			}
 			logger.Info("external ip", "pod", podName, "ip", ip)
 			ips[podName] = ip
@@ -1760,7 +1765,7 @@ func hasValkeyControllerReference(ownerRefs []metav1.OwnerReference, valkeyRef m
 	return false
 }
 
-func (r *ValkeyReconciler) balanceNodes(ctx context.Context, valkey *hyperv1.Valkey) error { // nolint: gocyclo
+func (r *ValkeyReconciler) balanceNodes(ctx context.Context, valkey *hyperv1.Valkey) error {
 	logger := log.FromContext(ctx)
 
 	// connect to the first node!
@@ -2353,7 +2358,7 @@ func buildValkeyCommand(valkey *hyperv1.Valkey) []string {
 	}
 }
 
-func (r *ValkeyReconciler) upsertStatefulSet(ctx context.Context, valkey *hyperv1.Valkey) error { // nolint:gocyclo
+func (r *ValkeyReconciler) upsertStatefulSet(ctx context.Context, valkey *hyperv1.Valkey) error {
 	logger := log.FromContext(ctx)
 
 	logger.Info("upserting statefulset")
