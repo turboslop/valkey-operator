@@ -121,6 +121,15 @@ type ValkeySpec struct {
 	// +optional
 	NodeSelector map[string]string `json:"nodeSelector,omitempty"`
 
+	// Modules to load at startup via loadmodule directives.
+	// +optional
+	Modules []ModuleConfig `json:"modules,omitempty"`
+
+	// ExtraConfig is appended verbatim to the end of valkey.conf.
+	// Use for arbitrary directives like module configuration, memory limits, or persistence settings.
+	// +optional
+	ExtraConfig string `json:"extraConfig,omitempty"`
+
 	// Which endpoint is shown as the preferred endpoint valid values are 'ip', 'hostname', or 'unknown-endpoint'.
 	// +kubebuilder:default:="ip"
 	// +kubebuilder:validation:Enum=ip;hostname;unknown-endpoint
@@ -137,6 +146,17 @@ type ValkeySpec struct {
 	// +kubebuilder:default:=false
 	// +optional
 	PlatformManagedSecurityContext bool `json:"platformManagedSecurityContext,omitempty"`
+}
+
+// ModuleConfig defines a Valkey module to load at startup.
+type ModuleConfig struct {
+	// Path to the module shared library.
+	// +kubebuilder:validation:MinLength=1
+	Path string `json:"path"`
+
+	// Args are optional arguments passed to the module at load time.
+	// +optional
+	Args []string `json:"args,omitempty"`
 }
 
 // ExternalAccess defines the external access configuration

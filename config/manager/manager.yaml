@@ -18,7 +18,7 @@ metadata:
     app.kubernetes.io/managed-by: kustomize
 data:
   nodes: "3"
-  valkeyImage: "ghcr.io/turboslop/valkey:8.1.4"
+  valkeyImage: "valkey/valkey-bundle:9.1-rc2"
   exporterImage: "ghcr.io/turboslop/valkey-sidecar:v0.0.51"
 ---
 apiVersion: apps/v1

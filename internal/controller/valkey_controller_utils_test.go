@@ -59,6 +59,31 @@ func TestLabels(t *testing.T) {
 	}
 }
 
+func TestLabelsAllowsNilObjectLabels(t *testing.T) {
+	const testResourceName = "test-resource"
+	valkey := &hyperspikeiov1.Valkey{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      testResourceName,
+			Namespace: "default",
+		},
+	}
+
+	result := labels(valkey)
+
+	if result["app.kubernetes.io/name"] != Valkey {
+		t.Errorf("Expected %v, got %v", Valkey, result["app.kubernetes.io/name"])
+	}
+	if result["app.kubernetes.io/instance"] != testResourceName {
+		t.Errorf("Expected %v, got %v", testResourceName, result["app.kubernetes.io/instance"])
+	}
+	if result["app.kubernetes.io/component"] != Valkey {
+		t.Errorf("Expected %v, got %v", Valkey, result["app.kubernetes.io/component"])
+	}
+	if valkey.Labels != nil {
+		t.Fatalf("expected labels helper not to mutate object labels")
+	}
+}
+
 func TestAnnotations(t *testing.T) {
 	testAnnotations := map[string]string{
 		"app": "valkey",
@@ -220,6 +245,54 @@ func TestPasswordYAMLMarshaling(t *testing.T) {
 		if result["inline_string"] != pwd {
 			t.Errorf("password %q round-trip failed: got %q", pwd, result["inline_string"])
 		}
+	}
+}
+
+func TestRenderValkeyConfigIncludesModulesAndExtraConfig(t *testing.T) {
+	valkey := &hyperspikeiov1.Valkey{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-resource",
+			Namespace: "default",
+		},
+		Spec: hyperspikeiov1.ValkeySpec{
+			Modules: []hyperspikeiov1.ModuleConfig{
+				{
+					Path: "/usr/lib/valkey/libsearch.so",
+					Args: []string{"--use-coordinator", "value with spaces"},
+				},
+			},
+			ExtraConfig: "search.use-coordinator yes\nmaxmemory 256mb",
+		},
+	}
+
+	conf, err := renderValkeyConfig(valkey)
+	if err != nil {
+		t.Fatalf("render valkey config: %v", err)
+	}
+
+	expectedLoadModule := `loadmodule /usr/lib/valkey/libsearch.so --use-coordinator "value with spaces"`
+	if !strings.Contains(conf, expectedLoadModule) {
+		t.Fatalf("expected rendered loadmodule line %q in config", expectedLoadModule)
+	}
+	if !strings.Contains(conf, "search.use-coordinator yes\nmaxmemory 256mb") {
+		t.Fatal("expected extraConfig to be appended verbatim")
+	}
+}
+
+func TestQuoteValkeyConfigArgEscapesNewlines(t *testing.T) {
+	got := quoteValkeyConfigArg("safe\nloadmodule /tmp/injected.so")
+	if strings.Contains(got, "\n") {
+		t.Fatalf("expected quoted config argument to escape newline, got %q", got)
+	}
+	if got != `"safe\nloadmodule /tmp/injected.so"` {
+		t.Fatalf("unexpected quoted config argument: %q", got)
+	}
+}
+
+func TestQuoteValkeyConfigArgLeavesBundleModulePathBare(t *testing.T) {
+	got := quoteValkeyConfigArg("/usr/lib/valkey/libsearch.so")
+	if got != "/usr/lib/valkey/libsearch.so" {
+		t.Fatalf("expected bundle module path to stay unquoted, got %q", got)
 	}
 }
 

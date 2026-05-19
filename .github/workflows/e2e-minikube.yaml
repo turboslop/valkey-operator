@@ -31,7 +31,7 @@ env:
   E2E_CLUSTER_RUNTIME: minikube
   E2E_IMG_CONTROLLER: localhost/valkey-operator:e2e
   E2E_IMG_SIDECAR: localhost/valkey-sidecar:e2e
-  E2E_IMG_VALKEY: localhost/valkey:e2e
+  E2E_IMG_VALKEY: valkey/valkey-bundle:9.1-rc2
 
 jobs:
   e2e-minikube:

@@ -25,7 +25,6 @@ import (
 	"embed"
 	"fmt"
 	"io"
-	"maps"
 	"math/big"
 	"net"
 	"os"
@@ -272,7 +271,10 @@ func (r *ValkeyReconciler) validateValkeySpec(valkey *hyperv1.Valkey) error {
 }
 
 func labels(valkey *hyperv1.Valkey) map[string]string {
-	l := maps.Clone(valkey.Labels)
+	l := make(map[string]string, len(valkey.Labels)+3)
+	for k, v := range valkey.Labels {
+		l[k] = v
+	}
 	l["app.kubernetes.io/name"] = Valkey
 	l["app.kubernetes.io/instance"] = valkey.Name
 	l["app.kubernetes.io/component"] = Valkey
@@ -395,25 +397,9 @@ func (r *ValkeyReconciler) upsertConfigMap(ctx context.Context, valkey *hyperv1.
 
 	logger.Info("upserting configmap")
 
-	defaultConfTmpl, err := scripts.ReadFile("scripts/valkey.conf")
+	conf, err := renderValkeyConfig(valkey)
 	if err != nil {
-		logger.Error(err, "failed to read valkey.conf")
-		return err
-	}
-	confTmpl, err := template.New("valkey.conf").Parse(string(defaultConfTmpl))
-	if err != nil {
-		logger.Error(err, "failed to parse valkey.conf")
-		return err
-	}
-	conf := &bytes.Buffer{}
-	if err := confTmpl.Execute(conf, struct {
-		TLS                          bool
-		ClusterPreferredEndpointType string
-	}{
-		TLS:                          valkey.Spec.TLS,
-		ClusterPreferredEndpointType: valkey.Spec.ClusterPreferredEndpointType,
-	}); err != nil {
-		logger.Error(err, "failed to execute valkey.conf")
+		logger.Error(err, "failed to render valkey.conf")
 		return err
 	}
 	pingReadinessLocal, err := scripts.ReadFile("scripts/ping_readiness_local.sh")
@@ -433,7 +419,7 @@ func (r *ValkeyReconciler) upsertConfigMap(ctx context.Context, valkey *hyperv1.
 			Labels:    labels(valkey),
 		},
 		Data: map[string]string{
-			"valkey.conf":             conf.String(),
+			"valkey.conf":             conf,
 			"ping_readiness_local.sh": string(pingReadinessLocal),
 			"ping_liveness_local.sh":  string(pingLivenessLocal),
 		},
@@ -470,6 +456,59 @@ func (r *ValkeyReconciler) upsertConfigMap(ctx context.Context, valkey *hyperv1.
 			fmt.Sprintf("ConfigMap %s/%s is created", valkey.Namespace, valkey.Name))
 	}
 	return nil
+}
+
+type valkeyConfigTemplateData struct {
+	TLS                          bool
+	ClusterPreferredEndpointType string
+	Modules                      []hyperv1.ModuleConfig
+	ExtraConfig                  string
+}
+
+func renderValkeyConfig(valkey *hyperv1.Valkey) (string, error) {
+	defaultConfTmpl, err := scripts.ReadFile("scripts/valkey.conf")
+	if err != nil {
+		return "", err
+	}
+	confTmpl, err := template.New("valkey.conf").Funcs(template.FuncMap{
+		"valkeyConfigArg": quoteValkeyConfigArg,
+	}).Parse(string(defaultConfTmpl))
+	if err != nil {
+		return "", err
+	}
+	conf := &bytes.Buffer{}
+	if err := confTmpl.Execute(conf, valkeyConfigTemplateData{
+		TLS:                          valkey.Spec.TLS,
+		ClusterPreferredEndpointType: valkey.Spec.ClusterPreferredEndpointType,
+		Modules:                      valkey.Spec.Modules,
+		ExtraConfig:                  valkey.Spec.ExtraConfig,
+	}); err != nil {
+		return "", err
+	}
+	return conf.String(), nil
+}
+
+func quoteValkeyConfigArg(value string) string {
+	if isBareValkeyConfigArg(value) {
+		return value
+	}
+	return strconv.Quote(value)
+}
+
+func isBareValkeyConfigArg(value string) bool {
+	if value == "" {
+		return false
+	}
+	for _, r := range value {
+		if r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' {
+			continue
+		}
+		if strings.ContainsRune("-._/:=@%+,", r) {
+			continue
+		}
+		return false
+	}
+	return true
 }
 
 func (r *ValkeyReconciler) GetPassword(ctx context.Context, valkey *hyperv1.Valkey) (string, error) {
