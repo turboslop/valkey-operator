@@ -3,6 +3,14 @@ REGISTRY ?= ghcr.io/turboslop
 IMG_CONTROLLER ?= $(REGISTRY)/valkey-operator:$(VERSION)
 IMG_SIDECAR ?= $(REGISTRY)/valkey-sidecar:$(VERSION)
 IMG_VALKEY ?= $(REGISTRY)/valkey:$(VALKEY_VERSION)
+HELM_CHART_NAME ?= valkey-operator
+HELM_CHART_BUILD_DIR ?= dist/helm/$(HELM_CHART_NAME)
+HELM_CHART_PACKAGE_DIR ?= dist/charts
+CHART_VERSION ?= $(patsubst v%,%,$(VERSION))
+HELM_CHART_PACKAGE ?= $(HELM_CHART_PACKAGE_DIR)/$(HELM_CHART_NAME)-$(CHART_VERSION).tgz
+HELM_OCI_REGISTRY ?= ghcr.io/turboslop/helm
+HELM_REPO_DIR ?= dist/helm-repo
+HELM_REPO_URL ?= https://turboslop.github.io/helm
 E2E_IMG_CONTROLLER ?= localhost/valkey-operator:e2e
 E2E_IMG_SIDECAR ?= localhost/valkey-sidecar:e2e
 E2E_IMG_VALKEY ?= valkey/valkey-bundle:9.1-rc2
@@ -190,8 +198,12 @@ docker-buildx: ## Build and push docker image for the manager for cross-platform
 .PHONY: build-installer
 build-installer: manifests generate kustomize ## Generate a consolidated YAML with CRDs and deployment.
 	$Qmkdir -p dist
-	$Qcd config/manager && $(KUSTOMIZE) edit set image controller=${IMG_CONTROLLER}
-	$Q$(KUSTOMIZE) build config/default > dist/install.yaml
+	$Qtmp_dir=$$(mktemp -d); \
+		trap 'rm -rf "$$tmp_dir"' EXIT; \
+		cp -R config "$$tmp_dir/config"; \
+		cd "$$tmp_dir/config/manager"; \
+		$(KUSTOMIZE) edit set image controller=$(IMG_CONTROLLER); \
+		$(KUSTOMIZE) build "$$tmp_dir/config/default" > "$(abspath dist/install.yaml)"
 
 ##@ Deployment
 
@@ -302,17 +314,54 @@ HELMIFY_VERSION ?= v0.4.14
 HELM_VERSION ?= v3.15.4
 GOSEC_VERSION ?= v2.22.1
 
-helm-gen: manifests kustomize helmify ## Generate Helm chart from Kustomize manifests
-	$Qcd config/manager && $(KUSTOMIZE) edit set image controller=${IMG_CONTROLLER}
-	$Q$(KUSTOMIZE) build config/default | $(HELMIFY) -crd-dir valkey-operator
-	$Qsed s@\\\(app.kubernetes.io/name\\\)@\'\\\1\'@ -i valkey-operator/templates/deployment.yaml
-	$Qsed s@\\\(app.kubernetes.io/instance\\\)@\'\\\1\'@ -i valkey-operator/templates/deployment.yaml
+.PHONY: helm-gen
+helm-gen: manifests kustomize helmify ## Generate Helm chart from Kustomize manifests.
+	$Qrm -rf "$(HELM_CHART_BUILD_DIR)"
+	$Qmkdir -p "$(dir $(HELM_CHART_BUILD_DIR))"
+	$Qtmp_dir=$$(mktemp -d); \
+		trap 'rm -rf "$$tmp_dir"' EXIT; \
+		cp -R config "$$tmp_dir/config"; \
+		cd "$$tmp_dir/config/manager"; \
+		$(KUSTOMIZE) edit set image controller=$(IMG_CONTROLLER); \
+		$(KUSTOMIZE) build "$$tmp_dir/config/default" | $(HELMIFY) -crd-dir "$(abspath $(HELM_CHART_BUILD_DIR))"; \
+		if [ -f "$(abspath $(HELM_CHART_BUILD_DIR))/templates/deployment.yaml" ]; then \
+			perl -pi -e "s@(app\\.kubernetes\\.io/name)@'\$$1'@g; s@(app\\.kubernetes\\.io/instance)@'\$$1'@g" "$(abspath $(HELM_CHART_BUILD_DIR))/templates/deployment.yaml"; \
+		fi; \
+		if [ -f "$(abspath $(HELM_CHART_BUILD_DIR))/Chart.yaml" ]; then \
+			perl -pi -e 's/^version:.*/version: $(CHART_VERSION)/; s/^appVersion:.*/appVersion: "$(VERSION)"/' "$(abspath $(HELM_CHART_BUILD_DIR))/Chart.yaml"; \
+		fi
 
-helm-package: helm-gen helm ## Package Helm chart
-	$Q$(HELM) package valkey-operator --app-version $(VERSION) --version $(VERSION)-chart
+.PHONY: helm-package
+helm-package: $(HELM_CHART_PACKAGE) ## Package Helm chart.
 
-helm-publish: helm-package ## Publish Helm chart
-	$Q$(HELM) push valkey-operator-$(VERSION)-chart.tgz oci://$(REGISTRY)
+$(HELM_CHART_PACKAGE): helm-gen helm
+	$Qmkdir -p "$(HELM_CHART_PACKAGE_DIR)"
+	$Qrm -f "$(HELM_CHART_PACKAGE)"
+	$Q$(HELM) package "$(HELM_CHART_BUILD_DIR)" --destination "$(HELM_CHART_PACKAGE_DIR)" --app-version "$(VERSION)" --version "$(CHART_VERSION)"
+
+.PHONY: helm-verify
+helm-verify: $(HELM_CHART_PACKAGE) ## Validate the generated Helm chart and package metadata.
+	$Q$(HELM) lint "$(HELM_CHART_BUILD_DIR)"
+	$Q$(HELM) template dsb "$(HELM_CHART_PACKAGE)" >/dev/null
+	$Qtest "$$($(HELM) show chart "$(HELM_CHART_PACKAGE)" | awk '/^version:/ {print $$2}')" = "$(CHART_VERSION)"
+	$Qtest "$$($(HELM) show chart "$(HELM_CHART_PACKAGE)" | awk '/^appVersion:/ {print $$2}')" = "$(VERSION)"
+
+.PHONY: helm-publish-oci
+helm-publish-oci: $(HELM_CHART_PACKAGE) ## Publish Helm chart to the OCI registry.
+	$Q$(HELM) push "$(HELM_CHART_PACKAGE)" oci://$(HELM_OCI_REGISTRY)
+
+.PHONY: helm-repo-index
+helm-repo-index: $(HELM_CHART_PACKAGE) helm ## Add the packaged chart to a classic Helm repository directory and update index.yaml.
+	$Qmkdir -p "$(HELM_REPO_DIR)"
+	$Qcp -f "$(HELM_CHART_PACKAGE)" "$(HELM_REPO_DIR)/"
+	$Qif [ -f "$(HELM_REPO_DIR)/index.yaml" ]; then \
+		$(HELM) repo index "$(HELM_REPO_DIR)" --url "$(HELM_REPO_URL)" --merge "$(HELM_REPO_DIR)/index.yaml"; \
+	else \
+		$(HELM) repo index "$(HELM_REPO_DIR)" --url "$(HELM_REPO_URL)"; \
+	fi
+
+.PHONY: helm-publish
+helm-publish: helm-publish-oci ## Publish Helm chart to OCI registry.
 
 .PHONY: tunnel registry-proxy prometheus-proxy
 tunnel: ## turn on minikube's tunnel to test ingress and get UI access
