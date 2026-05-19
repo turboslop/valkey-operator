@@ -1,3 +1,4 @@
+// Package controller contains the Valkey reconciliation logic.
 package controller
 
 import (

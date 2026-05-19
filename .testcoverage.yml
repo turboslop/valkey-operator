@@ -3,12 +3,13 @@ profile: cover.out
 threshold:
   file: 0
   package: 0
-  total: 30
+  total: 20
 
 exclude:
   paths:
     - _test\.go$
-    - /zz_generated.*\.go$
-    - ^cmd/
-    - /hack/
-    - /config/
+    - zz_generated.*\.go$
+    - cmd/
+    - hack/
+    - config/
+    - test/

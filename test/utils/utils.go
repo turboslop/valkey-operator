@@ -60,7 +60,7 @@ func Run(cmd *exec.Cmd) ([]byte, error) {
 	_, _ = fmt.Fprintf(ginkgo.GinkgoWriter, "running: %s\n", command)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		return output, fmt.Errorf("%s failed with error: (%v) %s", command, err, string(output))
+		return output, fmt.Errorf("%s failed: %w\n%s", command, err, string(output))
 	}
 
 	return output, nil

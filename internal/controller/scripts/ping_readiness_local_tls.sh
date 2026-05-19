@@ -1,11 +1,19 @@
 #!/bin/sh
 set -e
 
+TIMEOUT_SECONDS="${1:-5}"
+case "$TIMEOUT_SECONDS" in
+	''|*[!0-9]*)
+		echo "Invalid timeout: $TIMEOUT_SECONDS" >&2
+		exit 1
+		;;
+esac
+
 VALKEY_STATUS_FILE=/tmp/.valkey_cluster_check
 if [ ! -z "$VALKEY_PASSWORD" ]; then export REDISCLI_AUTH=$VALKEY_PASSWORD; fi;
 
-	response=$(
-	timeout --foreground -s 15 $1 \
+response=$(
+	timeout --foreground -s 15 "$TIMEOUT_SECONDS" \
 	valkey-cli \
 		-h localhost \
 		-p $VALKEY_TLS_PORT_NUMBER \
@@ -27,8 +35,8 @@ if [ "$response" != "PONG" ]; then
 fi
 count=$(echo $VALKEY_NODES | wc -w)
 if [ ! -f "$VALKEY_STATUS_FILE" ] && [ "$count" != "1" ]; then
-		response=$(
-		timeout --foreground -s 15 $1 \
+	response=$(
+		timeout --foreground -s 15 "$TIMEOUT_SECONDS" \
 		valkey-cli \
 			-h localhost \
 			-p $VALKEY_TLS_PORT_NUMBER \

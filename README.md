@@ -1,5 +1,7 @@
 # valkey-operator
 
+[![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/turboslop/valkey-operator/badge)](https://securityscorecards.dev/viewer/?uri=github.com/turboslop/valkey-operator)
+
 Provision [valkey](https://valkey.io) (redis) clusters
 
 ## Description
@@ -12,10 +14,10 @@ See the following link for more information on available Custom Resource Options
 
 ### Prerequisites
 
-- go version v1.22.0+
+- go version v1.25.0+
 - docker version 17.03+.
 - kubectl version v1.11.3+.
-- Access to a Kubernetes v1.11.3+ cluster.
+- Access to a Kubernetes v1.35.0+ cluster.
 
 ### Quick Start
 

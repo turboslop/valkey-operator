@@ -1,0 +1,63 @@
+name: Bug report
+description: Report a reproducible problem in valkey-operator
+title: "BUG: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Include enough detail for maintainers to reproduce the issue and verify the fix.
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: What happened?
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to Reproduce
+      description: Include the Valkey custom resource, commands, and observed output.
+      placeholder: |
+        1. Apply this Valkey resource: ...
+        2. Run: kubectl ...
+        3. Observe: ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected Behavior
+      description: What should have happened?
+    validations:
+      required: true
+  - type: input
+    id: kubernetes-version
+    attributes:
+      label: Kubernetes Version
+      placeholder: "v1.35.0"
+    validations:
+      required: true
+  - type: input
+    id: operator-version
+    attributes:
+      label: Operator Version
+      placeholder: "commit SHA, tag, or image"
+    validations:
+      required: true
+  - type: input
+    id: valkey-version
+    attributes:
+      label: Valkey Version
+      placeholder: "8.1.0"
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs and Events
+      render: shell
+  - type: textarea
+    id: additional-context
+    attributes:
+      label: Additional Context
