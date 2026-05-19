@@ -1,4 +1,4 @@
-apiVersion: hyperspike.io/v1
+apiVersion: turboslop.io/v1
 kind: Valkey
 metadata:
   labels:

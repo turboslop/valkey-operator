@@ -8,9 +8,9 @@ Website: [turboslop.dev](https://turboslop.dev)
 
 ## Description
 
-This operator creates valkey clusters and makes them available to other services on the k8s cluster
+This operator creates valkey clusters and makes them available to other services on the k8s cluster.
 
-See the following link for more information on available Custom Resource Options: [https://doc.crds.dev/github.com/hyperspike/valkey-operator](https://doc.crds.dev/github.com/hyperspike/valkey-operator)
+The Valkey custom resource is served as `apiVersion: turboslop.io/v1`. See generated CRD documentation at [https://doc.crds.dev/github.com/turboslop/valkey-operator](https://doc.crds.dev/github.com/turboslop/valkey-operator), or inspect the checked-in CRD at `config/crd/bases/turboslop.io_valkeys.yaml`.
 
 ## Getting Started
 

@@ -8,7 +8,7 @@ metadata:
   name: valkey-editor-role
 rules:
 - apiGroups:
-  - hyperspike.io
+  - turboslop.io
   resources:
   - valkeys
   verbs:
@@ -20,7 +20,7 @@ rules:
   - update
   - watch
 - apiGroups:
-  - hyperspike.io
+  - turboslop.io
   resources:
   - valkeys/status
   verbs:

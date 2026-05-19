@@ -27,7 +27,7 @@ KUBECTL := $(shell which kubectl)
 VERSION ?= $(shell  if [ ! -z $$(git tag --points-at HEAD) ] ; then git tag --points-at HEAD|cat ; else  git rev-parse --short HEAD|cat; fi )
 DATE ?= $(shell date -u  +'%Y%m%d')
 SHA ?= $(shell git rev-parse --short HEAD)
-PKG ?= hyperspike.io/valkey-operator
+PKG ?= github.com/turboslop/valkey-operator
 GOOS ?= linux
 GOARCH ?= amd64
 

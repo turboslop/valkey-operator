@@ -2,7 +2,7 @@ package main
 
 import (
 	"github.com/spf13/cobra"
-	"hyperspike.io/valkey-operator/internal/sidecar"
+	"github.com/turboslop/valkey-operator/internal/sidecar"
 )
 
 var bootstrapCmd = &cobra.Command{

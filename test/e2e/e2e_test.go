@@ -26,7 +26,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	"hyperspike.io/valkey-operator/test/utils"
+	"github.com/turboslop/valkey-operator/test/utils"
 )
 
 const (
@@ -104,7 +104,7 @@ var _ = Describe("controller", Ordered, func() {
 
 			By("waiting for the Valkey CRD")
 			cmd = exec.Command("kubectl",
-				"wait", "--for=condition=Established", "crd/valkeys.hyperspike.io", "--timeout=2m")
+				"wait", "--for=condition=Established", "crd/valkeys.turboslop.io", "--timeout=2m")
 			_, err = utils.Run(cmd)
 			ExpectWithOffset(1, err).NotTo(HaveOccurred())
 
@@ -117,7 +117,7 @@ metadata:
 			namespaceCreated = true
 
 			By("creating a Valkey custom resource")
-			ExpectWithOffset(1, applyManifest(valkeyNamespace, fmt.Sprintf(`apiVersion: hyperspike.io/v1
+			ExpectWithOffset(1, applyManifest(valkeyNamespace, fmt.Sprintf(`apiVersion: turboslop.io/v1
 kind: Valkey
 metadata:
   name: %s
