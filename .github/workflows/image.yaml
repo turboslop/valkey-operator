@@ -310,7 +310,7 @@ jobs:
         id: helm-repo-token
         uses: actions/create-github-app-token@v3
         with:
-          app-id: ${{ secrets.HELM_REPO_APP_ID }}
+          client-id: ${{ secrets.HELM_REPO_CLIENT_ID }}
           private-key: ${{ secrets.HELM_REPO_APP_PRIVATE_KEY }}
           owner: turboslop
           repositories: helm
