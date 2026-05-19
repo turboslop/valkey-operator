@@ -1,1 +1,2 @@
-FROM valkey/valkey-bundle:unstable
+ARG VALKEY_VERSION=9.1-rc2
+FROM valkey/valkey-bundle:${VALKEY_VERSION}

@@ -5,9 +5,12 @@ IMG_SIDECAR ?= $(REGISTRY)/valkey-sidecar:$(VERSION)
 IMG_VALKEY ?= $(REGISTRY)/valkey:$(VALKEY_VERSION)
 E2E_IMG_CONTROLLER ?= localhost/valkey-operator:e2e
 E2E_IMG_SIDECAR ?= localhost/valkey-sidecar:e2e
-E2E_IMG_VALKEY ?= localhost/valkey:e2e
+E2E_IMG_VALKEY ?= valkey/valkey-bundle:9.1-rc2
 E2E_CLUSTER_RUNTIME ?= kind
 E2E_TEST_TIMEOUT ?= 25m
+KIND_CLUSTER ?= valkey-operator-e2e
+KIND_IMAGE ?= kindest/node:v$(K8S_VERSION)
+E2E_RECREATE ?= false
 MINIKUBE_PROFILE ?= minikube
 # ENVTEST_K8S_VERSION refers to the version of kubebuilder assets to be downloaded by envtest binary.
 
@@ -42,7 +45,7 @@ SHELL = /usr/bin/env bash -o pipefail
 K8S_VERSION ?= 1.35.0
 ENVTEST_K8S_VERSION = $(K8S_VERSION)
 CILIUM_VERSION ?= 1.18.2
-VALKEY_VERSION ?= 8.1.4
+VALKEY_VERSION ?= 9.1-rc2
 
 V ?= 0
 ifeq ($(V), 1)
@@ -102,6 +105,7 @@ test-e2e:
 		IMG_SIDECAR=$(E2E_IMG_SIDECAR) \
 		IMG_VALKEY=$(E2E_IMG_VALKEY) \
 		E2E_CLUSTER_RUNTIME=$(E2E_CLUSTER_RUNTIME) \
+		KIND_CLUSTER=$(KIND_CLUSTER) \
 		MINIKUBE_PROFILE=$(MINIKUBE_PROFILE) \
 		go test ./test/e2e/ -v -ginkgo.v -timeout $(E2E_TEST_TIMEOUT)
 
@@ -213,6 +217,43 @@ undeploy: kustomize ## Undeploy controller from the K8s cluster specified in ~/.
 	$(KUSTOMIZE) build config/default | $(KUBECTL) delete --ignore-not-found=$(ignore-not-found) -f -
 
 ##@ Quickstart
+
+.PHONY: env
+env: ## Create or repair the local e2e cluster used by make test-e2e.
+ifeq ($(E2E_CLUSTER_RUNTIME),kind)
+	$Qcommand -v kind >/dev/null
+	$Qcommand -v $(CONTAINER_TOOL) >/dev/null
+	$Qcommand -v $(KUBECTL) >/dev/null
+	$Q$(CONTAINER_TOOL) info >/dev/null
+	$Qif kind get clusters | grep -Fxq "$(KIND_CLUSTER)"; then \
+		if [ "$(E2E_RECREATE)" = "true" ]; then \
+			echo "Recreating kind cluster $(KIND_CLUSTER) because E2E_RECREATE=true"; \
+			kind delete cluster --name "$(KIND_CLUSTER)"; \
+		elif $(KUBECTL) --context "kind-$(KIND_CLUSTER)" --request-timeout=10s cluster-info >/dev/null 2>&1; then \
+			echo "kind cluster $(KIND_CLUSTER) is already healthy"; \
+		else \
+			echo "kind cluster $(KIND_CLUSTER) exists but is unhealthy; recreating it"; \
+			kind delete cluster --name "$(KIND_CLUSTER)"; \
+		fi; \
+	fi
+	$Qif ! kind get clusters | grep -Fxq "$(KIND_CLUSTER)"; then \
+		kind create cluster --name "$(KIND_CLUSTER)" --image "$(KIND_IMAGE)" --wait 5m; \
+	fi
+	$Q$(KUBECTL) config use-context "kind-$(KIND_CLUSTER)"
+	$Q$(KUBECTL) --context "kind-$(KIND_CLUSTER)" wait --for=condition=Ready nodes --all --timeout=5m
+	$Q$(CONTAINER_TOOL) image inspect "$(E2E_IMG_VALKEY)" >/dev/null 2>&1 || $(CONTAINER_TOOL) pull "$(E2E_IMG_VALKEY)"
+	$Qecho "e2e environment is ready: KIND_CLUSTER=$(KIND_CLUSTER) make test-e2e"
+else ifeq ($(E2E_CLUSTER_RUNTIME),minikube)
+	$Qcommand -v $(MINIKUBE) >/dev/null
+	$Q$(MINIKUBE) status -p "$(MINIKUBE_PROFILE)" >/dev/null 2>&1 || \
+		$(MINIKUBE) start -p "$(MINIKUBE_PROFILE)" --kubernetes-version "v$(K8S_VERSION)"
+	$Q$(KUBECTL) config use-context "$(MINIKUBE_PROFILE)"
+	$Q$(KUBECTL) wait --for=condition=Ready nodes --all --timeout=5m
+	$Q$(CONTAINER_TOOL) image inspect "$(E2E_IMG_VALKEY)" >/dev/null 2>&1 || $(CONTAINER_TOOL) pull "$(E2E_IMG_VALKEY)"
+	$Qecho "e2e environment is ready: E2E_CLUSTER_RUNTIME=minikube make test-e2e"
+else
+	$(error unsupported E2E_CLUSTER_RUNTIME "$(E2E_CLUSTER_RUNTIME)")
+endif
 
 .PHONY: minikube
 minikube: ## Spool up a local minikube cluster for development

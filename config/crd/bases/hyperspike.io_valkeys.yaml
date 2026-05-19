@@ -223,9 +223,33 @@ spec:
                     - Proxy
                     type: string
                 type: object
+              extraConfig:
+                description: |-
+                  ExtraConfig is appended verbatim to the end of valkey.conf.
+                  Use for arbitrary directives like module configuration, memory limits, or persistence settings.
+                type: string
               image:
                 description: Image to use
                 type: string
+              modules:
+                description: Modules to load at startup via loadmodule directives.
+                items:
+                  description: ModuleConfig defines a Valkey module to load at startup.
+                  properties:
+                    args:
+                      description: Args are optional arguments passed to the module
+                        at load time.
+                      items:
+                        type: string
+                      type: array
+                    path:
+                      description: Path to the module shared library.
+                      minLength: 1
+                      type: string
+                  required:
+                  - path
+                  type: object
+                type: array
               nodeSelector:
                 additionalProperties:
                   type: string

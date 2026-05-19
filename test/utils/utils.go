@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"runtime"
 	"strings"
 
 	"github.com/onsi/ginkgo/v2"
@@ -59,6 +60,9 @@ func Run(cmd *exec.Cmd) ([]byte, error) {
 	command := strings.Join(cmd.Args, " ")
 	_, _ = fmt.Fprintf(ginkgo.GinkgoWriter, "running: %s\n", command)
 	output, err := cmd.CombinedOutput()
+	if len(output) > 0 {
+		_, _ = fmt.Fprintf(ginkgo.GinkgoWriter, "output:\n%s\n", string(output))
+	}
 	if err != nil {
 		return output, fmt.Errorf("%s failed: %w\n%s", command, err, string(output))
 	}
@@ -123,8 +127,37 @@ func LoadImageToKindClusterWithName(name string) error {
 	}
 	kindOptions := []string{"load", "docker-image", name, "--name", cluster}
 	cmd := exec.Command("kind", kindOptions...) // #nosec G204
-	_, err := Run(cmd)
-	return err
+	if _, err := Run(cmd); err == nil {
+		return nil
+	}
+
+	platform := "linux/" + runtime.GOARCH
+	if v, ok := os.LookupEnv("E2E_IMAGE_PLATFORM"); ok {
+		platform = v
+	}
+	archive, err := os.CreateTemp("", "valkey-operator-e2e-image-*.tar")
+	if err != nil {
+		return fmt.Errorf("create image archive: %w", err)
+	}
+	archiveName := archive.Name()
+	if err := archive.Close(); err != nil {
+		return fmt.Errorf("close image archive: %w", err)
+	}
+	defer func() {
+		if err := os.Remove(archiveName); err != nil {
+			warnError(err)
+		}
+	}()
+
+	cmd = exec.Command("docker", "image", "save", "--platform", platform, "-o", archiveName, name) // #nosec G204
+	if _, err := Run(cmd); err != nil {
+		return fmt.Errorf("save image %s for platform %s: %w", name, platform, err)
+	}
+	cmd = exec.Command("kind", "load", "image-archive", archiveName, "--name", cluster) // #nosec G204
+	if _, err := Run(cmd); err != nil {
+		return fmt.Errorf("load image archive for %s: %w", name, err)
+	}
+	return nil
 }
 
 // LoadImageToMinikubeClusterWithName loads a local docker image to the minikube cluster.
