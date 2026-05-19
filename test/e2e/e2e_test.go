@@ -98,8 +98,8 @@ kind: Valkey
 metadata:
   name: %s
 spec:
-  shards: 3
-  replicas: 0
+  shards: 1
+  replicas: 1
   image: %q
   exporterImage: %q
   volumePermissions: true
@@ -150,7 +150,11 @@ spec:
           valkey-cli -c -h %s -p 6379 set ci-smoke ok
           test "$(valkey-cli -c -h %s -p 6379 get ci-smoke)" = "ok"
           valkey-cli -h %s -p 6379 cluster info | grep "cluster_state:ok"
-`, smokeJobName, valkeyImage, valkeyName, valkeyName, valkeyName, valkeyName, valkeyName))).To(Succeed())
+          roles="$(for node in %s-0.%s-headless %s-1.%s-headless; do valkey-cli -h "$node" -p 6379 info replication | tr -d '\r' | sed -n 's/^role://p'; done)"
+          test "$(printf '%%s\n' "$roles" | grep -c '^master$')" = "1"
+          test "$(printf '%%s\n' "$roles" | grep -Ec '^(slave|replica)$')" = "1"
+`, smokeJobName, valkeyImage, valkeyName, valkeyName, valkeyName, valkeyName, valkeyName,
+				valkeyName, valkeyName, valkeyName, valkeyName))).To(Succeed())
 
 			cmd = exec.Command("kubectl", "-n", valkeyNamespace,
 				"wait", "--for=condition=complete", fmt.Sprintf("job/%s", smokeJobName), "--timeout=2m")
