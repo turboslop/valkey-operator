@@ -9,6 +9,7 @@ on:
       - Makefile
       - Dockerfile.*
       - .github/workflows/build.yaml
+      - .github/workflows/image.yaml
       - internal/**
       - cmd/**
       - api/**
@@ -59,3 +60,15 @@ jobs:
         visibility: public
         tags: ${{ steps.meta_operator.outputs.images }}
         labels: ${{ steps.meta_operator.outputs.labels }}
+  helm-chart:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v6
+    - name: Setup Go
+      uses: actions/setup-go@v6
+      with:
+        go-version: 1.25
+    - name: Package and verify Helm chart
+      run: make helm-verify V=1 VERSION=v0.1.2 IMG_CONTROLLER=ghcr.io/turboslop/valkey-operator:v0.1.2
+    - name: Ensure generated artifacts do not change tracked files
+      run: git diff --exit-code

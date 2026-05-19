@@ -55,8 +55,14 @@ curl -sL https://github.com/turboslop/valkey-operator/releases/download/$LATEST/
 ### Helm
 
 ```sh
-LATEST=$(curl -s https://api.github.com/repos/turboslop/valkey-operator/releases/latest | jq -cr .tag_name)
-helm install valkey-operator --namespace valkey-operator-system --create-namespace oci://ghcr.io/turboslop/valkey-operator --version ${LATEST}-chart
+helm repo add turboslop https://turboslop.github.io/helm
+helm install dsb turboslop/valkey-operator
+```
+
+Or install from the OCI chart mirror:
+
+```sh
+helm install dsb oci://ghcr.io/turboslop/helm/valkey-operator --version 0.1.2
 ```
 
 ### Verifying the container image
